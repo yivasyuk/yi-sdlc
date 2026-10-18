@@ -9,7 +9,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
-| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/workflow.md`, `scripts/rider-tab.ps1` | Take a YouTrack ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. Each ticket runs in its own Claude session in a Rider terminal tab named after its branch or feature, so several can run in parallel (through the `rider` MCP server; without it, in the invoking session). The shared flow is `ticket/workflow.md`; each repo supplies a profile, `.claude/yi-sdlc/project.md` (template: `ticket/profile-template.md`), with its tracker project, environment script, gates, test levels and docs to keep in sync. Need the `youtrack` MCP server. |
+| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/` | Take a tracker ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. See [The ticket kit](#the-ticket-kit). |
 | Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
@@ -35,6 +35,27 @@ Then in `~/.claude/settings.json`:
 ```json
 "statusLine": { "type": "command", "command": "node \"C:/Projects/Pet/yi-sdlc/statusline/statusline.js\"", "padding": 0, "refreshInterval": 10 }
 ```
+
+## The ticket kit
+
+Everything generic about ticket work lives in `ticket/`; what is particular to a repo lives in that repo's
+`.claude/yi-sdlc/`.
+
+| Plugin (`ticket/`) | What it holds |
+|---|---|
+| `workflow.md` | The flow `impl-fix`, `impl-change` and `impl-feature` share: SDLC mode, branches, test levels, docs sync, gates, review, PR, merge, ticket comments, the Blocked exit |
+| `tracker/contract.md` | The abstract tracker: column roles (`in-progress`, `blocked`, `in-review`, `test`, `done`), which tickets can be taken and which moves the agent makes (forward along the board's order, or to `blocked`), how `sdlc-mode` is read (default `developer`), the `manual-qa` label, and the `tracker.<operation>`s |
+| `tracker/youtrack.md`, `tracker/jira.md` | Adapters: which MCP tool carries out each operation |
+| `environment.md` | The interface a repo's isolated environment script implements (`up`, `status`, `restart`, `down`); the plugin has no environment code |
+| `launcher.md`, `scripts/rider-tab.ps1` | Each ticket in its own Rider terminal tab, so several run in parallel; when a tab can't open (no `rider` MCP server, the project not open, any launch error), the run carries on in the invoking session |
+| `profile-template.md` | The template for a repo's profile |
+
+| Repo (`.claude/yi-sdlc/`) | What it holds |
+|---|---|
+| `project.md` | The profile: the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, the launcher, live checks, test levels, gates, docs to keep in sync |
+| `ticket-env.ps1` | The repo's own isolated environment |
+
+The repo also registers its tracker's MCP server in `.mcp.json`.
 
 ## The imported sdlc plugin
 

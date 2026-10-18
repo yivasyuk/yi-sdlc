@@ -1,8 +1,9 @@
 ---
 name: impl-feature
 description: >-
-  Build a YouTrack feature ticket through the whole SDLC pipeline in an isolated environment (its own
-  worktree, in a Rider terminal tab named after it): take an optional feature name, then run yi-sdlc:interview,
+  Build a feature ticket (YouTrack, Jira, or any tracker the repo's profile maps) through the whole SDLC
+  pipeline in an isolated environment (its own worktree, in a Rider terminal tab named after it, or in this
+  session when no tab can open): take an optional feature name, then run yi-sdlc:interview,
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
@@ -11,18 +12,18 @@ description: >-
   one PR; defects go to /yi-sdlc:impl-fix, one-PR changes to /yi-sdlc:impl-change. Needs the repo's
   .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <youtrack-issue-id, required, e.g. yv-15> [easy|medium|hard] [--here]
+argument-hint: <ticket-id, required> [easy|medium|hard] [--here]
 model: opus
 effort: xhigh
 ---
 
-# Implement a YouTrack feature
+# Implement a feature ticket
 
 Take one feature ticket from the board to a merged PR by running the full `yi-sdlc:*` pipeline, stage by
 stage, inside the same isolated environment `/yi-sdlc:impl-fix` and `/yi-sdlc:impl-change` use. The stages
 do the product and design work and ask the operator their own questions; this skill picks the stages, feeds
-them the ticket, keeps them in the worktree, and wraps them in the ticket workflow (Stage, comments, PR,
-merge).
+them the ticket, keeps them in the worktree, and wraps them in the ticket workflow (board moves, comments,
+PR, merge).
 
 The planned stops:
 
@@ -34,15 +35,16 @@ The planned stops:
 Between them the skill runs on its own, apart from the questions the stages themselves ask, which the
 questioning hardness (step 0) scales.
 
-The ticket's `sdlc-mode` field doesn't apply to this skill (yet): it runs the same way whatever the field
-says. If the field is set, say so in one line in your first message.
+The ticket's `sdlc-mode` doesn't apply to this skill (yet): it runs the same way whatever the ticket says,
+including the `developer` default. If the ticket sets a mode, say so in one line in your first message.
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
-(`.claude/yi-sdlc/project.md` in the main clone).** The workflow holds what this skill shares with
-`/yi-sdlc:impl-fix` and `/yi-sdlc:impl-change`: YouTrack, the isolated environment, gates, PR, merge, ticket
-comments and the Blocked exit. The profile holds what is particular to this repo. The steps below point into
-them as "workflow § <section>" and "profile § <section>". Workflow § SDLC mode and § Developer mode don't
-apply here.
+(`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
+and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
+with `/yi-sdlc:impl-fix` and `/yi-sdlc:impl-change`: the tracker, branches, the isolated environment, gates,
+PR, merge, ticket comments and the Blocked exit. The profile holds what is particular to this repo. The
+steps below point into them as "workflow § <section>" and "profile § <section>". Workflow § SDLC mode and
+§ Developer mode don't apply here.
 
 ## 0. Read the arguments
 
@@ -63,10 +65,9 @@ command, so every stage gets `--depth=<depth>` and doesn't ask for the level aga
 
 ## 1. Read the ticket and check it is a feature
 
-1. `get_issue`, `get_issue_custom_fields`, `get_comments`, `get_issue_links`, `get_attachments` for `<id>`.
-   Read the comments in full: on a re-run, the operator's answers and the **Feature pipeline** comment
-   (step 5) are there.
-2. Check the Stage (workflow § YouTrack, below the table).
+1. Read the ticket (workflow § Tracker). Read the comments in full: on a re-run, the operator's answers
+   and the **Feature pipeline** comment (step 5) are there.
+2. Check the column (workflow § Tracker).
 3. Check who owns it (workflow § Which skill owns a ticket):
    - A defect → stop and tell the operator to run `/yi-sdlc:impl-fix <id>`.
    - A change to an existing feature that clearly fits one PR (none of the `/yi-sdlc:impl-change` step 2
@@ -87,32 +88,33 @@ Suggest **two or three kebab-case names** from the ticket, in the style of the e
 called?"** with the suggestions as options plus **"No name — use `<id>`"**, and wait. The operator can also
 type their own.
 
-This sets `<slug>`, `<prefix>` and `<branch>` for the rest of the run:
+This sets `<slug>`, `<prefix>` and `<branch>` for the rest of the run (the branches with the default
+patterns; profile § Branches `feature` and `feature-unnamed` may differ):
 
 | | Named (e.g. `strategy-configurator`) | No name |
 |---|---|---|
 | `<slug>`: the `docs/features/` folder and the stages' argument | `strategy-configurator` | `<id>` |
 | `<prefix>`: commit and PR title subject | `strategy-configurator:` | `<id>:` |
-| `<branch>` | `feature/<id>-strategy-configurator` | `feature/<id>` |
+| `<branch>` | `feature`: `feature/<id>-strategy-configurator` | `feature-unnamed`: `feature/<id>` |
 
 A named feature keeps the feature convention (`/yi-sdlc:git-commit`), so its history reads like the
 features before it; without a name it is ticket work and uses the ticket ID, as `/yi-sdlc:impl-fix` does.
 
 On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again. In the tab
-session (workflow § Rider tab), the launcher already asked: `<branch>` is `$env:YI_SDLC_BRANCH`, and `<slug>`
-is what follows `feature/<id>-` in it (`<id>` for a bare `feature/<id>`).
+session (`launcher.md` § In the tab session), the launcher already asked: `<branch>` is
+`$env:YI_SDLC_BRANCH`, and `<slug>` is what `{slug}` matches in the `feature` pattern (`<id>` when it
+matches `feature-unnamed`).
 
-Then workflow § Rider tab: unless you are the tab session or it says to stay here, launch the feature in its
-own tab, titled `<slug>`, and end. Pass `<depth>` on in the prompt (`/yi-sdlc:impl-feature <id> <depth>`), so
+Then `launcher.md`: open the feature in its own tab, titled `<slug>`, and end, or carry on here when it
+says so or the tab can't open. Pass `<depth>` on in the prompt (`/yi-sdlc:impl-feature <id> <depth>`), so
 the tab session doesn't ask for it.
 
 ## 3. Bring up the environment and enter it
 
 1. Note the main clone's root (`git rev-parse --show-toplevel`; in the tab session `$env:YI_SDLC_MAIN`, and
-   sub-steps 4–5 are already done, workflow § Rider tab) as `<main>`, and run the environment script
-   from profile § Environment by its absolute path under `<main>` (workflow § The isolated environment says
-   why).
-2. Set Stage → **In Progress**.
+   sub-steps 4–5 are already done, `launcher.md` § In the tab session) as `<main>`, and run the environment
+   script from profile § Environment by its absolute path under `<main>` (`environment.md` says why).
+2. `tracker.move <id> in-progress`.
 3. `ticket-env.ps1 up -Issue <id> -Branch <branch>`. Keep the printed JSON. On a re-run, `up` reuses the
    branch and worktree and restarts what isn't running.
 4. **Enter the worktree:** `EnterWorktree` with `path` = the printed `worktree`. The `yi-sdlc:*` stages write
@@ -176,12 +178,12 @@ the reviewer) knows it was meant.
 
 **Progress lives on the ticket.** After the first stage, post one comment headed **Feature pipeline** with
 `<slug>`, `<branch>`, `<depth>`, and the table above as a checklist (done with its commit hash, skipped with
-the reason, gates approved, next). After each stage or gate, update that same comment (`update_comment`)
+the reason, gates approved, next). After each stage or gate, update that same comment (`tracker.update-comment`)
 rather than adding one per stage, so the board shows where the feature is without a pile of comments.
 
 **Resuming.** On a re-run, find the first stage or gate that isn't done: start from the **Feature
 pipeline** comment, then confirm against the worktree (the *Done when* column, and
-`git log origin/main..HEAD`). When they disagree, trust the artifacts and fix the comment. A stage that
+`git log origin/<base>..HEAD`). When they disagree, trust the artifacts and fix the comment. A stage that
 stopped half-way (a draft without its critic pass, a `tracker.md` with tasks still open) is re-run, and the
 stage itself picks up from what is on disk.
 
@@ -192,10 +194,10 @@ stage itself picks up from what is on disk.
 - `review-feature` says CHANGES REQUESTED → run `implement-tasks` for the findings (the loop-back
   variant, no `/clear`), then `review-feature` again. After the second round still not PASS, take the
   Blocked exit with the open findings.
-- The operator wants to stop for now (to think, or to answer later) → **pause**, not Blocked: commit what
-  is worth keeping (`<prefix> WIP <what>`), note the open question in the **Feature pipeline** comment,
-  `ExitWorktree` with `keep`, and `ticket-env.ps1 down -Issue <id> -KeepWorktree`. The Stage stays In
-  Progress. Re-running the command picks up there.
+- The operator wants to stop for now (to think, or to answer later) → **pause**, not `blocked`: commit
+  what is worth keeping (`<prefix> WIP <what>`), note the open question in the **Feature pipeline**
+  comment, `ExitWorktree` with `keep`, and `ticket-env.ps1 down -Issue <id> -KeepWorktree`. The ticket
+  stays `in-progress`. Re-running the command picks up there.
 - Anything workflow § Blocked exit covers (the ticket isn't workable, a decision isn't yours) → that exit,
   with `ExitWorktree` `keep` before its `down`.
 
@@ -222,7 +224,7 @@ anything that reverses a non-goal, an ADR or a decision override elsewhere in `d
 
 ## 7. Check it live on the isolated app
 
-After the review passes, run `ticket-env.ps1 api-restart -Issue <id>` (so what doesn't hot-reload, and the
+After the review passes, run `ticket-env.ps1 restart -Issue <id>` (so what doesn't hot-reload, and the
 promoted migrations, reach the isolated copy). Then show that the ACs hold on the running app, not only in
 tests, the ways profile § Live check gives:
 
@@ -258,7 +260,7 @@ Workflow § PR and ticket update, from the worktree:
   - Business: **New feature:** what the operator can do now, in product terms, one or two sentences.
   - Technical: **Feature docs:** `docs/features/<slug>/` (PRD AC IDs, ADR numbers). **Live check:** the
     steps from step 7 → what happened.
-- Update the **Feature pipeline** comment: every stage done, the PR link. Stage → **In Review**.
+- Update the **Feature pipeline** comment: every stage done, the PR link. `tracker.move <id> in-review`.
 
 ## 10. Stop: ask to merge
 
@@ -269,5 +271,5 @@ those are what's hardest to undo after the merge.
 ## 11. After approval
 
 Workflow § After approval, with one step first: `ExitWorktree` with `keep` (the session goes back to the
-main clone; `down` removes the worktree itself). Then the merge, the Stage, `ticket-env.ps1 down -Issue <id>`,
-`git branch -D <branch>`. The `ship-feature` roadmap move is already in the merged PR.
+main clone; `down` removes the worktree itself). Then the merge, the board move, `ticket-env.ps1 down -Issue
+<id>`, `git branch -D <branch>`. The `ship-feature` roadmap move is already in the merged PR.

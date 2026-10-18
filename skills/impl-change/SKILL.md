@@ -1,22 +1,23 @@
 ---
 name: impl-change
 description: >-
-  Implement a YouTrack change request (an enhancement, new or changed behaviour, a task) end to end by its ID
-  in an isolated environment (its own worktree, in a Rider terminal tab named after it): check it fits one
-  PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it
-  test-first, review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back
-  on the ticket, and merge after the operator approves. The ticket's sdlc-mode field sets the autonomy: auto
-  (self-approves the ACs and merges, stops only on critical issues), semi-auto (asks at both stops) or
-  developer (briefs the operator and works with them interactively). Defects go to /yi-sdlc:impl-fix; work
-  too big for one PR goes to /yi-sdlc:impl-feature (the full SDLC pipeline). Needs the repo's
-  .claude/yi-sdlc/project.md.
+  Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
+  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own worktree, in a
+  Rider terminal tab named after it, or in this session when no tab can open): check it fits one PR, write
+  it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
+  review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back on the
+  ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
+  sets the autonomy: auto (self-approves the ACs and merges, stops only on critical issues), semi-auto
+  (asks at both stops) or developer, the default (briefs the operator and works with them interactively).
+  Defects go to /yi-sdlc:impl-fix; work too big for one PR goes to /yi-sdlc:impl-feature (the full SDLC
+  pipeline). Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <youtrack-issue-id, required, e.g. yv-2> [--here]
+argument-hint: <ticket-id, required> [--here]
 model: opus
 effort: xhigh
 ---
 
-# Implement a YouTrack change
+# Implement a change ticket
 
 Work **autonomously** from reading the ticket to an open, green PR with the ticket updated, with two
 planned stops:
@@ -29,15 +30,17 @@ planned stops:
 There is one more stop at the very start if they didn't give an issue ID (step 0). Every other decision
 is yours, made from the ticket, the repo docs and its conventions file.
 
-That is the `semi-auto` flow. The ticket's `sdlc-mode` field can change it (step 1): `auto` drops both
-planned stops, approving its own ACs and merging by itself, and `developer` turns the run into a brief plus
-an interactive session.
+That is the `semi-auto` flow. The ticket's `sdlc-mode` changes it (step 1): `auto` drops both planned
+stops, approving its own ACs and merging by itself, and `developer`, also what a ticket nobody marked gets,
+turns the run into a brief plus an interactive session.
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
-(`.claude/yi-sdlc/project.md` in the main clone).** The workflow holds what this skill shares with
-`/yi-sdlc:impl-fix`: YouTrack, the SDLC mode, the isolated environment, test levels, gates, commits, review,
-PR, merge, ticket comments and the Blocked exit. The profile holds what is particular to this repo. The
-steps below point into them as "workflow § <section>" and "profile § <section>".
+(`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
+and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
+with `/yi-sdlc:impl-fix`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
+gates, commits, review, PR, merge, ticket comments and the Blocked exit. The profile holds what is
+particular to this repo. The steps below point into them as "workflow § <section>" and "profile
+§ <section>".
 
 This skill sits between two other routes. `/yi-sdlc:impl-fix` handles defects. `/yi-sdlc:impl-feature` runs
 the full SDLC pipeline (`yi-sdlc:interview`, `yi-sdlc:write-prd`…) for new features. This skill handles changes
@@ -51,20 +54,20 @@ normalized ID.
 
 ## 1. Read the issue and understand the change
 
-1. `get_issue`, `get_issue_custom_fields`, `get_comments`, `get_issue_links`, `get_attachments` for `<id>`.
-   Read the comments in full: on a re-run after Blocked, the operator's answers are there.
-2. Check the Stage (workflow § YouTrack, below the table).
+1. Read the ticket (workflow § Tracker). Read the comments in full: on a re-run after `blocked`, the
+   operator's answers are there.
+2. Check the column (workflow § Tracker).
 3. Check that this is a change (workflow § Which skill owns a ticket). If it only asks to restore behaviour
    the docs already promise, stop and tell the operator to run `/yi-sdlc:impl-fix <id>` instead.
-4. Read the `sdlc-mode` field (workflow § SDLC mode). In `developer`, do the reads in sub-step 6 and the
+4. Read the `sdlc-mode` (workflow § SDLC mode). In `developer`, do the reads in sub-step 6 and the
    split in sub-step 7, then follow workflow § Developer mode instead of sub-step 8 and the steps after
    them; the items and the step 2 size check belong in the brief. In `auto`, a question that would block or
    wait for the operator from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
-5. Workflow § Rider tab: unless you are the tab session or it says to stay here, launch the ticket in its
-   own tab now and end. `<branch>` is `change/<id>-<short-kebab-slug>` (e.g. `change/<id>-chart-enhancements`).
-   The tab session runs the step 2 size check, so a ticket that graduates is caught there, and its Blocked
-   exit takes down the environment the launcher brought up.
+5. `<branch>` is profile § Branches `change` (e.g. `change/<id>-chart-enhancements`; workflow
+   § Branches). Then `launcher.md`: open the ticket in its own tab and end, or carry on here when it says
+   so or the tab can't open. The tab session runs the step 2 size check, so a ticket that graduates is
+   caught there, and its Blocked exit takes down the environment the launcher brought up.
 6. Find the **owning feature**: the `docs/features/<slug>/` whose PRD covers the area the ticket touches
    (the screen, capability or flow). Read its PRD (§1 decision overrides, §3 non-goals, §5 acceptance
    criteria, §8 open questions; a feature that went the standard route has `spec.md` instead, with the same
@@ -97,7 +100,7 @@ and why. If only some items are too big, offer the split instead: "Implement ite
 as its own feature?" A borderline case is the same kind of question. This exit applies in `auto` too: how
 much of the ticket to build is the operator's scope call, not a guess.
 
-Otherwise set Stage → **In Progress**.
+Otherwise `tracker.move <id> in-progress`.
 
 ## 3. Bring up the environment
 
@@ -107,7 +110,7 @@ printed JSON.
 ## 4. Record today's behaviour
 
 For each item, look at what the isolated app does **today**, the ways profile § Live check gives. The
-worktree is still at `origin/main`, so this is what the operator is running. Keep the requests and
+worktree is still at `origin/<base>`, so this is what the operator is running. Keep the requests and
 responses, screenshots and values on screen.
 
 Write it down per item as numbered steps → what happens now. This confirms you found the right place,
@@ -216,7 +219,7 @@ PRD path). Also ask the reviewer to check three things:
 
 ## 11. Demonstrate it on the running app
 
-Now that the code is final, run `ticket-env.ps1 api-restart -Issue <id>` and repeat **exactly** the steps
+Now that the code is final, run `ticket-env.ps1 restart -Issue <id>` and repeat **exactly** the steps
 from step 4. Each item must now behave as its ACs say, and the flows next to it must still work. If the
 change includes a migration, it was applied to the isolated copy on restart and should show nothing odd.
 

@@ -9,7 +9,7 @@
     {
       "name": "yi-sdlc",
       "source": "./",
-      "description": "The SDLC pipeline (idea to ship), YouTrack ticket skills, commit conventions, a desktop question dialog and toast notifications for Claude Code on Windows."
+      "description": "The SDLC pipeline (idea to ship), ticket skills for YouTrack and Jira, commit conventions, a desktop question dialog and toast notifications for Claude Code on Windows."
     }
   ]
 }
