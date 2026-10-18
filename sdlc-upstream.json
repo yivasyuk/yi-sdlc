@@ -1,8 +1,9 @@
 {
-    "source":  "C:\\Projects\\Learning\\agentic-engineering\\agentic-engineering-course\\sdlc",
-    "version":  "4.5.1",
-    "commit":  "76b847c0a415f04486dea787690c6c264fc49679",
+    "repo":  "https://github.com/genkovich/sdlc",
+    "ref":  "main",
+    "commit":  "1a93dea04bfaa25673bd2acc6fa2aec0081aed4f",
     "dirty":  false,
+    "version":  "4.5.1",
     "skills":  [
                    "api-forge",
                    "architecture-design",
