@@ -2,32 +2,47 @@
 .SYNOPSIS
     Imports the upstream sdlc plugin (Kyrylo Genkov, MIT) into yi-sdlc under the yi-sdlc namespace.
 
-    Copies <Source>\plugin\skills\* to skills\, <Source>\plugin\agents\*.md to agents\, <Source>\plugin\tests to
-    tests\sdlc\, the plugin README to SDLC.md and the licence to LICENSE-sdlc, then rewrites the copies' own
-    references so they resolve inside this plugin:
+    Takes the plugin from the public repo (https://github.com/genkovich/sdlc, cloned at -Ref into a temp folder)
+    or from a local checkout (-Source). Copies its plugin\skills\* to skills\, plugin\agents\*.md to agents\,
+    plugin\tests to tests\sdlc\, the plugin README to SDLC.md and the licence to LICENSE-sdlc, then rewrites
+    the copies' own references so they resolve inside this plugin:
       sdlc:<name>    -> yi-sdlc:<name>     (agents and skills, e.g. subagent_type "sdlc:critic")
       /sdlc-<name>   -> /yi-sdlc:<name>    (the commands the handoffs and triggers name)
     The settings file name .claude/sdlc.local.md and the sdlc/plugin/... path comments stay as they are.
     The source is never written to.
 
-    sdlc-upstream.json records what was imported (version, source commit, skill and agent names). A re-run
+    sdlc-upstream.json records what was imported (repo, ref, commit, version, skill and agent names). A re-run
     replaces exactly those entries, so skills removed upstream disappear here, and yi-sdlc's own skills
     (impl-*, git-commit, notification-mode) are never touched: an upstream name that collides with one stops
     the sync.
 
 .EXAMPLE
-    .\scripts\sync-sdlc.ps1
-    .\scripts\sync-sdlc.ps1 -Source D:\src\sdlc
+    .\scripts\sync-sdlc.ps1                     # the latest upstream main
+    .\scripts\sync-sdlc.ps1 -Ref 0439dc4        # a given commit (or branch)
+    .\scripts\sync-sdlc.ps1 -Source D:\src\sdlc  # a local checkout instead of the public repo
 #>
 [CmdletBinding()]
 param(
-    # The sdlc repo folder (the one holding plugin\).
-    [string]$Source = 'C:\Projects\Learning\agentic-engineering\agentic-engineering-course\sdlc'
+    [string]$Repo = 'https://github.com/genkovich/sdlc',
+    # Branch or commit of -Repo to import.
+    [string]$Ref = 'main',
+    # A local sdlc checkout (the folder holding plugin\) to import instead of -Repo.
+    [string]$Source
 )
 
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path $PSScriptRoot -Parent
+$clone = $null
+if (-not $Source) {
+    $clone = Join-Path ([IO.Path]::GetTempPath()) "yi-sdlc-upstream-$([guid]::NewGuid().ToString('N'))"
+    & git clone --quiet --filter=blob:none --no-checkout $Repo $clone
+    if ($LASTEXITCODE -ne 0) { throw "git clone $Repo failed" }
+    & git -C $clone -c advice.detachedHead=false checkout --quiet $Ref
+    if ($LASTEXITCODE -ne 0) { throw "No ref '$Ref' in $Repo" }
+    $Source = $clone
+}
+try {
 $plugin = Join-Path $Source 'plugin'
 if (-not (Test-Path (Join-Path $plugin 'plugin.json'))) { throw "No sdlc plugin at $plugin" }
 
@@ -95,13 +110,14 @@ foreach ($file in $copied) {
 }
 
 $upstream = Get-Content (Join-Path $plugin 'plugin.json') -Raw | ConvertFrom-Json
-$commit = (& git -C $Source log -1 --format=%H -- plugin 2>$null)
+$commit = if ($clone) { & git -C $Source rev-parse HEAD } else { & git -C $Source log -1 --format=%H -- plugin 2>$null }
 $dirty = [bool](& git -C $Source status --porcelain -- plugin 2>$null)
 [ordered]@{
-    source  = $Source
-    version = $upstream.version
+    repo    = if ($clone) { $Repo } else { $Source }
+    ref     = if ($clone) { $Ref } else { $null }
     commit  = $commit
     dirty   = $dirty
+    version = $upstream.version
     skills  = $skills
     agents  = $agents
 } | ConvertTo-Json | ForEach-Object { [IO.File]::WriteAllText($manifestPath, $_ + "`n", (New-Object Text.UTF8Encoding $false)) }
@@ -117,3 +133,6 @@ $removed = @($prevSkills | Where-Object { $skills -notcontains $_ }) + @($prevAg
     rewrites = $rewrites
     removed  = $removed
 } | ConvertTo-Json -Compress
+} finally {
+    if ($clone -and (Test-Path $clone)) { Remove-Item -Recurse -Force $clone }
+}

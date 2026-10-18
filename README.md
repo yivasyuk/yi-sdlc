@@ -38,12 +38,12 @@ Then in `~/.claude/settings.json`:
 
 ## The imported sdlc plugin
 
-`scripts/sync-sdlc.ps1` imports the upstream plugin from the course repo
-(`C:\Projects\Learning\agentic-engineering\agentic-engineering-course\sdlc`, or `-Source`) and never writes to
-it. It copies the skills to `skills/`, the agents to `agents/`, the tests to `tests/sdlc/`, the README to `SDLC.md`
+`scripts/sync-sdlc.ps1` imports the upstream plugin from its public repo,
+[genkovich/sdlc](https://github.com/genkovich/sdlc): it clones `-Ref` (default `main`; a commit pins it) into a
+temp folder, or takes a local checkout with `-Source`, which it never writes to. It copies the skills to `skills/`, the agents to `agents/`, the tests to `tests/sdlc/`, the README to `SDLC.md`
 and the licence to `LICENSE-sdlc`, then rewrites the copies' references: `sdlc:<name>` → `yi-sdlc:<name>` and
 `/sdlc-<name>` → `/yi-sdlc:<name>`. The settings file name `.claude/sdlc.local.md` stays, so repos keep theirs.
-`sdlc-upstream.json` records the version, the source commit and what was imported; a re-run replaces exactly that,
+`sdlc-upstream.json` records the repo, ref, commit and version and what was imported; a re-run replaces exactly that,
 so don't edit the imported files here (the next sync overwrites them) and keep yi-sdlc's own skills under names
 upstream doesn't use (the script stops on a collision).
 
