@@ -202,36 +202,57 @@ namespace ClaudeHook {
     $origLang = if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' }
     $script:lang = $origLang
 
-    # Title context: project (git repo or cwd), branch, and SDLC feature (docs/features/<slug>
-    # matching the branch, else the one with the most recently edited files).
+    # Title context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
+    # feature (docs/features/<slug>) the branch names, else the one it changes: uncommitted changes first,
+    # then its commits since the default branch, newest first. No such feature, or a fix/ or change/
+    # branch, no Feature field.
     $context = [ordered]@{}
     if ($payload.cwd) {
         $root = $payload.cwd
+        $project = Split-Path -Leaf $root
         $branch = ''
+        $changed = @()
         try {
             $ErrorActionPreference = 'Continue'  # git writes to stderr outside a repo
             $repoRoot = git -C $payload.cwd rev-parse --show-toplevel 2>$null
             if ($LASTEXITCODE -eq 0 -and $repoRoot) {
                 $root = $repoRoot
-                $branch = git -C $payload.cwd rev-parse --abbrev-ref HEAD 2>$null
-                if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $payload.cwd rev-parse --short HEAD 2>$null) }
+                $project = Split-Path -Leaf $root
+                # A worktree's folder is named after its branch; the shared .git sits in the main checkout.
+                $commonDir = git -C $root rev-parse --path-format=absolute --git-common-dir 2>$null
+                if ($LASTEXITCODE -eq 0 -and $commonDir -and (Split-Path -Leaf $commonDir) -eq '.git') {
+                    $project = Split-Path -Leaf (Split-Path -Parent $commonDir)
+                }
+                $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
+                if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $root rev-parse --short HEAD 2>$null) }
+
+                $changed += @(git -C $root -c core.quotepath=off status --porcelain --untracked-files=all -- docs/features 2>$null |
+                    ForEach-Object { $_.Substring(3) -replace '^.* -> ', '' })
+                $default = git -C $root rev-parse --abbrev-ref origin/HEAD 2>$null
+                if ($LASTEXITCODE -ne 0 -or -not $default) { $default = 'main' }
+                $base = git -C $root merge-base HEAD $default 2>$null
+                if ($LASTEXITCODE -eq 0 -and $base) {
+                    $changed += @(git -C $root -c core.quotepath=off log --format= --name-only "$base..HEAD" -- docs/features 2>$null)
+                }
             }
         } catch {} finally { $ErrorActionPreference = 'Stop' }
-        $context['Project'] = Split-Path -Leaf $root
+        $context['Project'] = $project
         if ($branch) { $context['Branch'] = $branch }
 
         $featuresDir = Join-Path $root 'docs\features'
         if (Test-Path $featuresDir) {
             $slugs = @(Get-ChildItem -LiteralPath $featuresDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '_*' })
-            $feature = $slugs | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_.Name))($|[/_-])" } |
-                Sort-Object { $_.Name.Length } -Descending | Select-Object -First 1
-            if (-not $feature) {
-                $feature = $slugs | Sort-Object {
-                    Get-ChildItem -LiteralPath $_.FullName -File -Recurse -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty LastWriteTime
-                } -Descending | Select-Object -First 1
+            $slugNames = @($slugs | ForEach-Object { $_.Name })
+            # A fix or a change branch works on a ticket, not on a feature.
+            if ($branch -notmatch '^(fix|change)/') {
+                $feature = $slugNames | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_))($|[/_-])" } |
+                    Sort-Object { $_.Length } -Descending | Select-Object -First 1
+                if (-not $feature) {
+                    $feature = $changed | Where-Object { $_ -match '^"?docs/features/([^/]+)/' } |
+                        ForEach-Object { $Matches[1] } | Where-Object { $slugNames -contains $_ } | Select-Object -First 1
+                }
+                if ($feature) { $context['Feature'] = $feature }
             }
-            if ($feature) { $context['Feature'] = $feature.Name }
         }
     }
     if ($context.Count -eq 0) { $context['Project'] = '(unknown)' }
