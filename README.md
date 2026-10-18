@@ -9,6 +9,8 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
 | Skill `/yi-sdlc:worktree` (alias `/yi-sdlc:wt`) | `skills/worktree`, `skills/wt`, `scripts/worktree.ps1` | Creates or reuses a git worktree for a branch, copies gitignored files and Claude memory, and opens the solution in Rider. Defaults target the EvenFlow backend; pass `-RepoPath`, `-SolutionName` for another repo. |
+| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/workflow.md` | Take a YouTrack ticket (defect, one-PR change, or feature through the full `sdlc:*` pipeline) to a merged PR in an isolated environment. The shared flow is `ticket/workflow.md`; each repo supplies a profile, `.claude/yi-sdlc/project.md` (template: `ticket/profile-template.md`), with its tracker project, environment script, gates, test levels and docs to keep in sync. Need the `sdlc` plugin and the `youtrack` MCP server. |
+| Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
 Hook registrations live in `hooks/hooks.json`. The dialog keeps its state (`notification-mode`, `all-recommended\`)
