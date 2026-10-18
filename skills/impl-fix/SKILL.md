@@ -1,14 +1,15 @@
 ---
 name: impl-fix
 description: >-
-  Fix a YouTrack defect end to end by its ID in an isolated environment: reproduce it on a running copy of
-  the app, pin it with a failing test, fix, review with sdlc:reviewer, re-check it live, open a PR, report
-  back on the ticket, and merge after the operator approves. The ticket's sdlc-mode field sets the autonomy:
-  auto (merges without asking, stops only on critical issues), semi-auto (asks before merging) or developer
-  (briefs the operator and works with them interactively). For a defect only: behaviour the docs already
-  promise. New or changed behaviour goes to /yi-sdlc:impl-change. Needs the repo's .claude/yi-sdlc/project.md.
+  Fix a YouTrack defect end to end by its ID in an isolated environment (its own worktree, in a Rider
+  terminal tab named after it): reproduce it on a running copy of the app, pin it with a failing test, fix,
+  review with yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the
+  operator approves. The ticket's sdlc-mode field sets the autonomy: auto (merges without asking, stops only
+  on critical issues), semi-auto (asks before merging) or developer (briefs the operator and works with them
+  interactively). For a defect only: behaviour the docs already promise. New or changed behaviour goes to
+  /yi-sdlc:impl-change. Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <youtrack-issue-id, required, e.g. yv-12>
+argument-hint: <youtrack-issue-id, required, e.g. yv-12> [--here]
 model: opus
 effort: xhigh
 ---
@@ -43,21 +44,23 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
 2. Check the Stage (workflow § YouTrack, below the table).
 3. Check that this is a defect (workflow § Which skill owns a ticket). If the ticket asks for new or changed
    behaviour, stop and tell the operator to run `/yi-sdlc:impl-change <id>` instead.
-4. Read the `sdlc-mode` field (workflow § SDLC mode). In `developer`, do the reads in sub-step 5, then
-   follow workflow § Developer mode instead of sub-steps 6–7 and the steps after them. In `auto`, a question
+4. Read the `sdlc-mode` field (workflow § SDLC mode). In `developer`, do the reads in sub-step 6, then
+   follow workflow § Developer mode instead of sub-steps 7–8 and the steps after them. In `auto`, a question
    that would block from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
-5. Find where the problem lives: the architecture map and ADRs (profile § Docs), and the feature's own docs
+5. Workflow § Rider tab: unless you are the tab session or it says to stay here, launch the ticket in its
+   own tab now and end. `<branch>` is `fix/<id>-<short-kebab-slug>` (e.g. `fix/<id>-fill-gaps-error`).
+6. Find where the problem lives: the architecture map and ADRs (profile § Docs), and the feature's own docs
    (`docs/features/<slug>/PRD.md` acceptance criteria, or `spec.md` on a feature that went the standard
    route; `design-spec.md`). Those say what "correct" means. Then read the code.
-6. The issue is workable when you can state **expected vs actual behaviour** precisely enough to check
+7. The issue is workable when you can state **expected vs actual behaviour** precisely enough to check
    it. If you can't, take the Blocked exit (workflow § Blocked exit) now, before building anything.
-7. Set Stage → **In Progress**.
+8. Set Stage → **In Progress**.
 
 ## 2. Bring up the environment
 
-`ticket-env.ps1 up -Issue <id> -Branch fix/<id>-<short-kebab-slug>` (e.g. `fix/<id>-fill-gaps-error`;
-workflow § The isolated environment). Keep the printed JSON.
+`ticket-env.ps1 up -Issue <id> -Branch <branch>` (step 1.5; workflow § The isolated environment). Keep the
+printed JSON.
 
 ## 3. Reproduce on the running app
 

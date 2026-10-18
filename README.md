@@ -7,8 +7,9 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 |---|---|---|
 | Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and All As Recommended for the rest of a session. See the script's header. |
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
+| Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
-| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/workflow.md` | Take a YouTrack ticket (defect, one-PR change, or feature through the full `sdlc:*` pipeline) to a merged PR in an isolated environment. The shared flow is `ticket/workflow.md`; each repo supplies a profile, `.claude/yi-sdlc/project.md` (template: `ticket/profile-template.md`), with its tracker project, environment script, gates, test levels and docs to keep in sync. Need the `sdlc` plugin and the `youtrack` MCP server. |
+| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/workflow.md`, `scripts/rider-tab.ps1` | Take a YouTrack ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. Each ticket runs in its own Claude session in a Rider terminal tab named after its branch or feature, so several can run in parallel (through the `rider` MCP server; without it, in the invoking session). The shared flow is `ticket/workflow.md`; each repo supplies a profile, `.claude/yi-sdlc/project.md` (template: `ticket/profile-template.md`), with its tracker project, environment script, gates, test levels and docs to keep in sync. Need the `youtrack` MCP server. |
 | Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
@@ -19,10 +20,6 @@ in the plugin's data dir, `~/.claude/plugins/data/<plugin id>/`, which survives 
 
 The working copy is the plugin: a marketplace added from a local path loads the plugin in place, so edits here take
 effect in the next session without reinstalling.
-
-It depends on the `sdlc` plugin from the `local-plugins` marketplace (`dependencies` in `plugin.json`, allowed by
-`allowCrossMarketplaceDependenciesOn` in `marketplace.json`). Add that marketplace first; installing `yi-sdlc` then
-installs `sdlc` too, and `yi-sdlc` stays disabled while `sdlc` is disabled or missing.
 
 ```powershell
 git clone https://github.com/yivasyuk/yi-sdlc C:\Projects\Pet\yi-sdlc
@@ -38,6 +35,20 @@ Then in `~/.claude/settings.json`:
 ```json
 "statusLine": { "type": "command", "command": "node \"C:/Projects/Pet/yi-sdlc/statusline/statusline.js\"", "padding": 0, "refreshInterval": 10 }
 ```
+
+## The imported sdlc plugin
+
+`scripts/sync-sdlc.ps1` imports the upstream plugin from the course repo
+(`C:\Projects\Learning\agentic-engineering\agentic-engineering-course\sdlc`, or `-Source`) and never writes to
+it. It copies the skills to `skills/`, the agents to `agents/`, the tests to `tests/sdlc/`, the README to `SDLC.md`
+and the licence to `LICENSE-sdlc`, then rewrites the copies' references: `sdlc:<name>` → `yi-sdlc:<name>` and
+`/sdlc-<name>` → `/yi-sdlc:<name>`. The settings file name `.claude/sdlc.local.md` stays, so repos keep theirs.
+`sdlc-upstream.json` records the version, the source commit and what was imported; a re-run replaces exactly that,
+so don't edit the imported files here (the next sync overwrites them) and keep yi-sdlc's own skills under names
+upstream doesn't use (the script stops on a collision).
+
+To pick up an upstream release, run the script, review the diff and commit it as
+`scaffold: Sync sdlc <version>`. Keep `sdlc@local-plugins` disabled, or every skill shows up twice.
 
 ## Checks
 

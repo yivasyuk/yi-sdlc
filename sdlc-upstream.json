@@ -1,0 +1,43 @@
+{
+    "source":  "C:\\Projects\\Learning\\agentic-engineering\\agentic-engineering-course\\sdlc",
+    "version":  "4.5.1",
+    "commit":  "76b847c0a415f04486dea787690c6c264fc49679",
+    "dirty":  false,
+    "skills":  [
+                   "api-forge",
+                   "architecture-design",
+                   "break-tasks",
+                   "clarify-prd",
+                   "classify-size",
+                   "complete-sequence-diagrams",
+                   "decide-adr",
+                   "fix-term",
+                   "generate-data-model",
+                   "implement-tasks",
+                   "interview",
+                   "map-architecture",
+                   "plan-tests",
+                   "prepare-design-spec",
+                   "review-feature",
+                   "roadmap",
+                   "scaffold",
+                   "ship-feature",
+                   "user-documentation",
+                   "verify-ui",
+                   "write-prd",
+                   "_shared"
+               ],
+    "agents":  [
+                   "analyst",
+                   "critic",
+                   "devils-advocate",
+                   "doc-flow",
+                   "explorer",
+                   "implementer",
+                   "refactor",
+                   "researcher",
+                   "reviewer",
+                   "strategist",
+                   "test-author"
+               ]
+}
