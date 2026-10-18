@@ -20,6 +20,7 @@ This folder has no `SKILL.md`, so it never triggers by itself.
 - [YouTrack](#youtrack)
 - [SDLC mode](#sdlc-mode)
 - [The isolated environment](#the-isolated-environment)
+- [Rider tab](#rider-tab)
 - [Get the issue ID](#get-the-issue-id)
 - [Test levels](#test-levels)
 - [Docs sync](#docs-sync)
@@ -152,8 +153,9 @@ All work happens in an environment of its own, so the operator's checkout and de
 may be using them while you work. The repo's environment script builds and removes it; profile § Environment
 names the script, what the operator's dev stack is, and what `up` gives you. Run the script from the main
 clone with the PowerShell tool, always by its absolute path in the main clone (`<main>` below is
-`git rev-parse --show-toplevel` there): the worktree has its own copy, which would resolve its paths from the
-worktree and build the wrong environment. Below, `ticket-env.ps1` means that absolute path.
+`git rev-parse --show-toplevel` there, or `$env:YI_SDLC_MAIN` in a tab session, § Rider tab): the worktree
+has its own copy, which would resolve its paths from the worktree and build the wrong environment. Below,
+`ticket-env.ps1` means that absolute path.
 
 Every environment script takes these commands:
 
@@ -178,9 +180,70 @@ Rules that follow from it:
 - Profile § Environment lists what the isolated app still reaches outside itself (live services, paid APIs)
   and what you must never do there.
 
+## Rider tab
+
+Each ticket runs in a Claude session of its own, started inside its worktree, in a Rider terminal tab named
+after it, so the operator can start several tickets one after another and watch them side by side. The
+session the operator invoked is the **launcher**: it reads the ticket, checks it is the right skill, brings
+up the environment, opens the tab and ends. The session in the tab is the **tab session**: it runs the same
+command and does the actual work, from the Stage onwards.
+
+### In the tab session
+
+You are the tab session when `$env:YI_SDLC_TAB` equals `<id>`. Then skip the launch below, and:
+
+- `<main>` is `$env:YI_SDLC_MAIN` (`git rev-parse --show-toplevel` would give the worktree), and the profile
+  is `<main>\.claude\yi-sdlc\project.md`. `<branch>` is `$env:YI_SDLC_BRANCH`: the launcher chose it and
+  named the tab after it.
+- First, remove the launch configuration: `${CLAUDE_PLUGIN_ROOT}/scripts/rider-tab.ps1 -Main <main> -Id <id>
+  -Remove`. The tab stays open without it.
+- You already work in the worktree. `ticket-env.ps1 up` answers at once with the running environment's
+  JSON. Skip `EnterWorktree` and `ExitWorktree`.
+- You can't remove your own worktree: Windows keeps the folder of a running process in use. Wherever a step
+  says `ticket-env.ps1 down -Issue <id>` without `-KeepWorktree` (after the merge, or a Blocked exit with
+  nothing worth keeping), run it **with** `-KeepWorktree`. Then `git switch --detach` in the worktree, so
+  `git -C <main> branch -D <branch>` can delete the branch. The detached HEAD also tells the tab the ticket
+  is finished: when Claude exits, it removes the worktree. Your final message ends with **"Exit Claude
+  (`/exit`) to remove the worktree."**
+
+### Launch
+
+Run the work **here, in this session**, without a tab, when any of these holds, and say which in one line:
+
+- profile § Rider tab says `off`, or the operator said to stay here ("here", "no tab", `--here` in the
+  arguments);
+- `sdlc-mode` is `developer`: it is a conversation with the operator, which is already happening here;
+- the `rider` MCP server isn't connected, or `<main>` isn't among its open projects (the error of any
+  `mcp__rider__*` call lists them).
+
+Otherwise:
+
+1. Decide `<branch>` now, by the rules in § The isolated environment (for `/yi-sdlc:impl-feature`, after
+   its name step). On a re-run, the ticket already has one (`git branch --list "*/<id>-*" "*/<id>"`): reuse
+   it. The tab title is the feature's `<slug>` for `/yi-sdlc:impl-feature`, and `<branch>` for the other two.
+2. `ticket-env.ps1 up -Issue <id> -Branch <branch>`: the tab starts in the worktree, so it must exist first.
+   Keep the printed `worktree`.
+3. Run `${CLAUDE_PLUGIN_ROOT}/scripts/rider-tab.ps1 -Main <main> -Id <id> -Worktree <worktree>
+   -EnvScript <ticket-env.ps1> -Title <title> -Branch <branch> -Prompt "<the command you are running, with
+   its arguments>"`, adding `-Setup` and `-ClaudeArgs` when profile § Rider tab gives them. It copies the
+   main clone's git-ignored Claude files into the worktree, writes a Rider run configuration to
+   `<main>\.run\` (git ignores it), and prints its `name` and `file`.
+4. `mcp__rider__read_file` on that file (`rootFolder` = `<main>`): Rider only loads a new run configuration
+   once it reads the file. Then `mcp__rider__get_run_configurations` must list `name`; read the file once
+   more if it doesn't.
+5. `mcp__rider__execute_run_configuration` with `configurationName` = `name` and `waitForExit: false`. It
+   answers **"The process has failed to start" even when the tab opened**, because a run in the terminal
+   has no process for it to track. That answer is success. Any other error: remove the configuration
+   (`-Remove`), say why, and run the work here instead (the environment is already up; your skill's `up`
+   reuses it).
+6. End with one message: the ticket is running in the Rider tab `<title>`, in `<worktree>`, where its
+   questions and stops will come up. Claude may first ask there whether to trust the new folder. Don't set
+   the Stage or comment on the ticket: the tab session does that, and doing it twice would collide.
+
 ## Get the issue ID
 
-The issue ID is mandatory. Which ticket to work on is the operator's choice, never yours.
+The issue ID is mandatory. Which ticket to work on is the operator's choice, never yours. A `--here` among
+the arguments isn't part of it: it is for § Rider tab, and the launch prompt leaves it out.
 
 - An ID in the project's format, or one profile § Tracker says to normalize (another case, an old prefix, a
   bare number): normalize it and use it.

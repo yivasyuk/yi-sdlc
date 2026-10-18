@@ -1,16 +1,17 @@
 ---
 name: impl-change
 description: >-
-  Implement a YouTrack change request (an enhancement, new or changed behaviour, a task) end to end by its
-  ID in an isolated environment: check it fits one PR, write it into the owning feature's acceptance criteria
-  and get the operator's approval, build it test-first, review with sdlc:reviewer, demonstrate it on a
-  running copy of the app, open a PR, report back on the ticket, and merge after the operator approves. The
-  ticket's sdlc-mode field sets the autonomy: auto (self-approves the ACs and merges, stops only on critical
-  issues), semi-auto (asks at both stops) or developer (briefs the operator and works with them
-  interactively). Defects go to /yi-sdlc:impl-fix; work too big for one PR goes to /yi-sdlc:impl-feature (the
-  full sdlc pipeline). Needs the repo's .claude/yi-sdlc/project.md.
+  Implement a YouTrack change request (an enhancement, new or changed behaviour, a task) end to end by its ID
+  in an isolated environment (its own worktree, in a Rider terminal tab named after it): check it fits one
+  PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it
+  test-first, review with sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back
+  on the ticket, and merge after the operator approves. The ticket's sdlc-mode field sets the autonomy: auto
+  (self-approves the ACs and merges, stops only on critical issues), semi-auto (asks at both stops) or
+  developer (briefs the operator and works with them interactively). Defects go to /yi-sdlc:impl-fix; work
+  too big for one PR goes to /yi-sdlc:impl-feature (the full sdlc pipeline). Needs the repo's
+  .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <youtrack-issue-id, required, e.g. yv-2>
+argument-hint: <youtrack-issue-id, required, e.g. yv-2> [--here]
 model: opus
 effort: xhigh
 ---
@@ -55,12 +56,16 @@ normalized ID.
 2. Check the Stage (workflow § YouTrack, below the table).
 3. Check that this is a change (workflow § Which skill owns a ticket). If it only asks to restore behaviour
    the docs already promise, stop and tell the operator to run `/yi-sdlc:impl-fix <id>` instead.
-4. Read the `sdlc-mode` field (workflow § SDLC mode). In `developer`, do the reads in sub-step 5 and the
-   split in sub-step 6, then follow workflow § Developer mode instead of sub-step 7 and the steps after
+4. Read the `sdlc-mode` field (workflow § SDLC mode). In `developer`, do the reads in sub-step 6 and the
+   split in sub-step 7, then follow workflow § Developer mode instead of sub-step 8 and the steps after
    them; the items and the step 2 size check belong in the brief. In `auto`, a question that would block or
    wait for the operator from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
-5. Find the **owning feature**: the `docs/features/<slug>/` whose PRD covers the area the ticket touches
+5. Workflow § Rider tab: unless you are the tab session or it says to stay here, launch the ticket in its
+   own tab now and end. `<branch>` is `change/<id>-<short-kebab-slug>` (e.g. `change/<id>-chart-enhancements`).
+   The tab session runs the step 2 size check, so a ticket that graduates is caught there, and its Blocked
+   exit takes down the environment the launcher brought up.
+6. Find the **owning feature**: the `docs/features/<slug>/` whose PRD covers the area the ticket touches
    (the screen, capability or flow). Read its PRD (§1 decision overrides, §3 non-goals, §5 acceptance
    criteria, §8 open questions; a feature that went the standard route has `spec.md` instead, with the same
    sections, and "PRD" below means that file), `design-spec.md`, `sad.md` §6 flows, `test-plan.md`, its
@@ -69,10 +74,10 @@ normalized ID.
      feature whose ACs change gets a one-line decision override in its PRD §1 that points to the owner.
    - If no feature owns the area (it predates the feature docs), the ACs go into a new
      `docs/changes/<id>.md` in the same AC format. Say so at the spec stop.
-6. Split the ticket into **items**: each separate thing it asks for, phrased as behaviour someone could
+7. Split the ticket into **items**: each separate thing it asks for, phrased as behaviour someone could
    check. A ticket like "Chart enhancements" with five bullets is five items. An item you can only half
    understand still goes on the list, with a question and your best guess, for the spec stop.
-7. If no item is workable at all (you can't say what any of it means), take the Blocked exit now.
+8. If no item is workable at all (you can't say what any of it means), take the Blocked exit now.
 
 ## 2. Check that it fits one PR
 
@@ -96,8 +101,8 @@ Otherwise set Stage → **In Progress**.
 
 ## 3. Bring up the environment
 
-`ticket-env.ps1 up -Issue <id> -Branch change/<id>-<short-kebab-slug>` (e.g. `change/<id>-chart-enhancements`;
-workflow § The isolated environment). Keep the printed JSON.
+`ticket-env.ps1 up -Issue <id> -Branch <branch>` (step 1.5; workflow § The isolated environment). Keep the
+printed JSON.
 
 ## 4. Record today's behaviour
 

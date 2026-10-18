@@ -1,16 +1,17 @@
 ---
 name: impl-feature
 description: >-
-  Build a YouTrack feature ticket through the whole SDLC pipeline in an isolated environment: take an
-  optional feature name, then run sdlc:interview, write-prd, clarify-prd, architecture-design, sequences,
-  data model, API contract, design spec, tasks, test plan, TDD implementation, review, live verification and
-  ship, then open a PR, report back on the ticket, and merge after the operator approves. A second argument
-  sets how hard the stages question the operator: easy (default), medium or hard. Stops at three gates (PRD,
-  architecture, plan) and before merging; resumable, so re-running it picks up at the next unfinished stage.
-  For new features and changes too big for one PR; defects go to /yi-sdlc:impl-fix, one-PR changes to
-  /yi-sdlc:impl-change. Needs the repo's .claude/yi-sdlc/project.md.
+  Build a YouTrack feature ticket through the whole SDLC pipeline in an isolated environment (its own
+  worktree, in a Rider terminal tab named after it): take an optional feature name, then run sdlc:interview,
+  write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
+  plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
+  and merge after the operator approves. A second argument sets how hard the stages question the operator:
+  easy (default), medium or hard. Stops at three gates (PRD, architecture, plan) and before merging;
+  resumable, so re-running it picks up at the next unfinished stage. For new features and changes too big for
+  one PR; defects go to /yi-sdlc:impl-fix, one-PR changes to /yi-sdlc:impl-change. Needs the repo's
+  .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <youtrack-issue-id, required, e.g. yv-15> [easy|medium|hard]
+argument-hint: <youtrack-issue-id, required, e.g. yv-15> [easy|medium|hard] [--here]
 model: opus
 effort: xhigh
 ---
@@ -71,7 +72,7 @@ command, so every stage gets `--depth=<depth>` and doesn't ask for the level aga
    - A change to an existing feature that clearly fits one PR (none of the `/yi-sdlc:impl-change` step 2
      graduation criteria holds) → say so and ask **"This looks like one PR. Run `/yi-sdlc:impl-change <id>`
      instead, or go through the full pipeline anyway?"** The full pipeline isn't wrong for it, only heavier,
-     and the operator may want the PRD and SAD.
+     and the operator may want the PRD and SAD. The tab session doesn't ask again: the launcher did.
    - A ticket `/yi-sdlc:impl-change` graduated (its Blocked comment proposed a slug) is a feature: offer that
      slug first in step 2.
 4. Read enough to know where the feature lands: the roadmap, the architecture map and the product brief
@@ -97,11 +98,18 @@ This sets `<slug>`, `<prefix>` and `<branch>` for the rest of the run:
 A named feature keeps the feature convention (`/yi-sdlc:git-commit`), so its history reads like the
 features before it; without a name it is ticket work and uses the ticket ID, as `/yi-sdlc:impl-fix` does.
 
-On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again.
+On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again. In the tab
+session (workflow § Rider tab), the launcher already asked: `<branch>` is `$env:YI_SDLC_BRANCH`, and `<slug>`
+is what follows `feature/<id>-` in it (`<id>` for a bare `feature/<id>`).
+
+Then workflow § Rider tab: unless you are the tab session or it says to stay here, launch the feature in its
+own tab, titled `<slug>`, and end. Pass `<depth>` on in the prompt (`/yi-sdlc:impl-feature <id> <depth>`), so
+the tab session doesn't ask for it.
 
 ## 3. Bring up the environment and enter it
 
-1. Note the main clone's root (`git rev-parse --show-toplevel`) as `<main>`, and run the environment script
+1. Note the main clone's root (`git rev-parse --show-toplevel`; in the tab session `$env:YI_SDLC_MAIN`, and
+   sub-steps 4–5 are already done, workflow § Rider tab) as `<main>`, and run the environment script
    from profile § Environment by its absolute path under `<main>` (workflow § The isolated environment says
    why).
 2. Set Stage → **In Progress**.

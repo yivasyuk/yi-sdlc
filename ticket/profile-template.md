@@ -29,6 +29,18 @@ names), not advice.
 - Outside reach: <live services the isolated app still calls, and what must never happen there (orders,
   real accounts, paid calls)>.
 
+## Rider tab
+
+Optional: without this section, each ticket still opens in its own Rider tab, with no setup commands. Needs
+the `rider` MCP server, the main clone open in Rider, and PowerShell as Rider's terminal shell (Settings →
+Tools → Terminal → Shell path).
+
+- Tabs: `on` (or `off`: every ticket runs in the session that invoked the skill).
+- Setup: <PowerShell run in the tab before Claude starts, e.g. `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'`;
+  leave out when none>.
+- Claude arguments: <extra `claude` flags for the tab session, e.g. `--permission-mode auto`; leave out when
+  none>.
+
 ## Live check
 
 How to see behaviour on the isolated app, for reproducing a bug and showing a change: <call the `api` URL with
