@@ -12,7 +12,10 @@ agent account can see.
 
 - `columns`: the board's **statuses** in board order. A board column that holds several statuses is
   listed as the status the agent should move to; list the others too, with no role, so a ticket in them
-  is recognized.
+  is recognized. Workflows often end with deployment stages (`Ready to deploy to QA`, `QA`, `UAT`): the
+  first of them is usually `merged`, and the rest need no role.
+- `account`: the Atlassian MCP signs in with a person's OAuth, often the operator's own: then set
+  `comment_prefix` (contract § Rules).
 - `sdlc_mode.field`: a single-select custom field (`customfield_<n>`), and/or `sdlc_mode.tags`: Jira
   labels.
 - `labels.manual-qa`: a Jira label.
@@ -33,6 +36,10 @@ agent account can see.
 
 ## Quirks
 
+- A transition's name can differ from its target status (`Ready to deploy` → `Ready to deploy to QA`):
+  always match on `to.name`, never on the transition's `name`. On a workflow without global transitions,
+  the target may not be reachable in one step from the current status: report it rather than chaining
+  transitions through statuses the board doesn't expect.
 - A transition can require fields on its screen (a resolution on `Done`). `transitionJiraIssue` takes
   them in `fields`; when it fails on one, name it and stop rather than guessing a value.
 - Labels can't contain spaces, and a new label springs into existence when it's set: only set the one

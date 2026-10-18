@@ -18,14 +18,16 @@ operation is carried out; here go the names.
 adapter: youtrack                     # youtrack | jira | a repo file with the same shape, e.g. .claude/yi-sdlc/tracker-adapter.md
 mcp_server: youtrack                  # the server's name in .mcp.json (or the connector's)
 account: <agent-login>                # what the MCP server is logged in as; the operator's actions use another account
+comment_prefix: '🤖 Claude:'          # only when `account` is the operator's own: starts every agent comment
 ticket_url: https://<instance>/issue/{id}
 # cloud_id: https://<site>.atlassian.net   # jira only
 id_pattern: '^<key>-\d+$'
 examples: { fix: <key>-12, change: <key>-2, feature: <key>-15 }
 
-# The Agile board's columns, left to right. Give a role to the ones the skills need:
-# in-progress, in-review, done and blocked (required), test (optional). The agent only moves a ticket
-# forward along this order, or to blocked; it takes tickets from any column before in-review, and from blocked.
+# The Agile board's columns (Jira: statuses), left to right. Give a role to the ones the skills need:
+# in-progress, merged and blocked (required), in-review and test (optional). The agent only moves a ticket
+# forward along this order, or into and out of blocked; it takes tickets from any column before in-review
+# (no in-review: before merged), and from blocked. Columns after merged (deploy, QA, UAT) are never touched.
 column_field: Stage                   # youtrack only: the state-type field the board is built on
 columns:
   - Backlog
@@ -34,13 +36,13 @@ columns:
   - { name: Blocked,     role: blocked }
   - { name: In Review,   role: in-review }
   - { name: Test,        role: test }
-  - { name: Done,        role: done }
+  - { name: Done,        role: merged }
 
 # Where a ticket carries its sdlc-mode: a field, tags (labels in Jira), or both (the field wins).
 # Nothing set, or a value or tag not listed here: developer.
 sdlc_mode:
   field: { name: sdlc-mode, values: { auto: auto, semi-auto: semi-auto, developer: developer } }
-  # tags: { sdlc-auto: auto, sdlc-semi-auto: semi-auto }
+  # tags: { auto: auto, semi-auto: semi-auto }
 
 # Optional: the tracker's issue types as hints for which skill owns a ticket.
 type: { fix: [Bug, Exception], change: [Task, Usability Problem], feature: [Feature, Epic] }

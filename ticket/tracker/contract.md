@@ -28,12 +28,14 @@ the order.
 | Role | Required | Who moves a ticket there | Meaning |
 |---|---|---|---|
 | `in-progress` | yes | **agent**, when it starts the work | The agent is working on it |
-| `in-review` | yes | **agent**, once the PR is green | Waiting for the operator's merge approval (in `auto`, only until the agent merges) |
-| `test` | no | **agent**, after the merge, if labelled `manual-qa` | Merged, waiting for the operator's manual check. Without it, such a ticket goes to `done`, and the comment says the check is still needed |
-| `done` | yes | **agent**, after the merge otherwise (operator, after a manual check) | Finished |
+| `in-review` | no | **agent**, once the PR is green | Waiting for the operator's merge approval (in `auto`, only until the agent merges). Without it, the ticket stays `in-progress` until the merge |
+| `test` | no | **agent**, after the merge, if labelled `manual-qa` | Merged, waiting for the operator's manual check. Without it, such a ticket goes to `merged`, and the comment says the check is still needed |
+| `merged` | yes | **agent**, after the merge otherwise | Where a merged PR leaves the ticket: `Done` on a board that ends there, or the first deployment column (`Ready to deploy to QA`) on one that goes on |
 | `blocked` | yes | **agent** | The agent needs the operator; its comment says what. Off the line: it can sit anywhere in the order |
 
-The columns before `in-progress` (`Backlog`, `Ready To Start`, …) need no role: they are the operator's.
+The columns before `in-progress` (`Backlog`, `To Do`, …) need no role: they are the operator's. Neither do
+the columns after `merged` (deployment stages, QA, UAT, a final `Done`): they belong to whoever deploys
+and checks, and the agent never moves a ticket there.
 
 ## Taking a ticket
 
@@ -41,8 +43,8 @@ Check the ticket's column in step 1 of every skill, before touching git or the e
 
 | The ticket's column is… | The skill… |
 |---|---|
-| before `in-review` in the order (anything the operator has, `in-progress` itself, a role-less column in between), or the `blocked` column | takes it. The operator invoked the skill on purpose; `in-progress` and `blocked` are re-runs, and their comments and the branch say where the last run stopped |
-| `in-review` or anything after it | stops: tell the operator it was handled before |
+| before the **hand-off column** (`in-review` when the board has one, otherwise `merged`) in the order: anything the operator has, `in-progress` itself, a role-less column in between; or the `blocked` column | takes it. The operator invoked the skill on purpose; `in-progress` and `blocked` are re-runs, and their comments and the branch say where the last run stopped |
+| the hand-off column or anything after it | stops: tell the operator it was handled before |
 | not in profile § Tracker `columns` | stops: name the column and ask the operator to add it to the profile |
 
 Profile § Tracker may narrow this with **take conditions** in prose (for example "only from Ready To
@@ -56,14 +58,15 @@ names:
 
 | Move | When |
 |---|---|
-| → `in-progress` | The skill starts the work (after the ownership and workability checks; `/yi-sdlc:impl-change` after its size check) |
-| → `blocked` | Workflow § Blocked exit, from any column before `in-review` |
-| `in-progress` → `in-review` | The PR is open and its checks are green |
-| `in-review` → `test` or `done` | Merged (`test` when labelled `manual-qa` and the board has one) |
+| → `in-progress` | The skill starts the work (after the ownership and workability checks; `/yi-sdlc:impl-change` after its size check), also out of `blocked` on a re-run |
+| → `blocked` | Workflow § Blocked exit, from any column before the hand-off column |
+| `in-progress` → `in-review` | The PR is open and its checks are green. No `in-review` column: no move |
+| → `test` or `merged` | Merged (`test` when labelled `manual-qa` and the board has one) |
 
-A move that would go backwards in the order (the ticket is already past the target column) isn't made:
-leave the ticket where it is and say so. Moving a ticket back, out of `blocked`, or from `test` to `done`
-is the operator's. In `developer` mode the agent makes no move without asking first (workflow § Developer
+`blocked` is off the line, so moves into and out of it ignore the order. Every other move goes forward
+only: a move that would go backwards (the ticket is already past the target column) isn't made; leave
+the ticket where it is and say so. Moving a ticket back, out of `blocked` other than to start a re-run,
+or anywhere past `merged` is the operator's. In `developer` mode the agent makes no move without asking first (workflow § Developer
 mode). When the tracker refuses a move (a workflow rule, a required field), don't force it another way:
 say what it refused and stop.
 
@@ -116,9 +119,11 @@ says manual testing is needed).
 
 ## Rules
 
-- Use only the MCP server profile § Tracker names. It is logged in as the agent account profile § Tracker
-  names, so everything the skills write shows up under that account. That is how the operator tells the
-  agent's actions from theirs.
+- Use only the MCP server profile § Tracker names. It is logged in as the account profile § Tracker
+  `account` names. Ideally that is an agent account of its own, so everything the skills write shows up
+  under it, and that is how the operator tells the agent's actions from theirs. When it is the operator's
+  own account, start every comment with profile § Tracker `comment_prefix` (default `🤖 Claude:`), so the
+  agent's comments still stand out.
 - Comments are Markdown. When the tracker renders something else, the adapter says how to convert.
 - If an operation fails because the mapping is wrong (an unknown column, field or tag), stop before
   anything else changes and name the profile entry to fix. Don't guess another name.
