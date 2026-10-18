@@ -1,26 +1,37 @@
 # Ticket workflow (shared by `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change` and `/yi-sdlc:impl-feature`)
 
-These skills take one YouTrack ticket from the board to a merged PR, working in an isolated environment. They
+These skills take one tracker ticket from the board to a merged PR, working in an isolated environment. They
 differ in the first half: a fix restores behaviour the docs already promise, a change decides new behaviour
 and gets it approved before building, and a feature goes through the full `yi-sdlc:*` pipeline. Everything
 else is the same and lives here. Each skill's numbered steps say which section to follow and when, so follow
 them in the skill's order. The sections below are reference, not a sequence.
 
-What differs between repos (the tracker project, the environment script, the gates, where tests live, which
-docs to keep in sync) lives in the repo's **project profile**, `.claude/yi-sdlc/project.md` in the main clone.
-This file points into it as "profile § <section>". Read it right after this file. If the repo has none,
-stop before touching YouTrack, git or anything else, and tell the operator the skill needs one, made from
-`profile-template.md` next to this file.
+The rest of the kit sits next to this file:
+
+| File | Holds |
+|---|---|
+| `workflow.md` (this file) | The flow the three skills share |
+| `tracker/contract.md` | The abstract tracker: column roles, `sdlc-mode`, labels, when a ticket can be taken, which moves the agent makes, and the `tracker.<operation>`s the steps call |
+| `tracker/<adapter>.md` | How the adapter profile § Tracker names (`youtrack`, `jira`, or a file in the repo) carries out each operation |
+| `environment.md` | The interface of the repo's isolated environment script |
+| `launcher.md` | Where the ticket's session runs: its own Rider tab, or here when that isn't possible |
+
+What differs between repos (the tracker and its mapping, the branch names, the environment script, the
+gates, where tests live, which docs to keep in sync) lives in the repo's **project profile**,
+`.claude/yi-sdlc/project.md` in the main clone. These files point into it as "profile § <section>". Read it
+right after this file, then `tracker/contract.md` and the adapter it names. If the repo has no profile,
+stop before touching the tracker, git or anything else, and tell the operator the skill needs one, made
+from `profile-template.md` next to this file.
 
 This folder has no `SKILL.md`, so it never triggers by itself.
 
 ## Contents
 
 - [Which skill owns a ticket](#which-skill-owns-a-ticket)
-- [YouTrack](#youtrack)
+- [Tracker](#tracker)
 - [SDLC mode](#sdlc-mode)
+- [Branches](#branches)
 - [The isolated environment](#the-isolated-environment)
-- [Rider tab](#rider-tab)
 - [Get the issue ID](#get-the-issue-id)
 - [Test levels](#test-levels)
 - [Docs sync](#docs-sync)
@@ -36,61 +47,51 @@ This folder has no `SKILL.md`, so it never triggers by itself.
 
 ## Which skill owns a ticket
 
-Decide by what the ticket asks for. The **Type** field is only a hint, because operators file things
-loosely.
+Decide by what the ticket asks for. The `type` (tracker contract § Type) is only a hint, because
+operators file things loosely.
 
-| The ticket asks to… | Skill | Usual Type |
+| The ticket asks to… | Skill | Usual `type` |
 |---|---|---|
-| Restore behaviour that the docs (PRD ACs, `design-spec.md`, ADRs) or plain sense already promise: an error, a wrong value, a crash, a broken flow | `/yi-sdlc:impl-fix` | Bug, Exception |
-| Add behaviour or change what the docs promise, or do a chore with a checkable result (a refactor, an upgrade) | `/yi-sdlc:impl-change` | Task, Feature, Usability Problem |
-| A new feature, or a change too big for one PR (`/yi-sdlc:impl-change` step 2 graduates it) | `/yi-sdlc:impl-feature` | Feature, Epic |
+| Restore behaviour that the docs (PRD ACs, `design-spec.md`, ADRs) or plain sense already promise: an error, a wrong value, a crash, a broken flow | `/yi-sdlc:impl-fix` | `fix` |
+| Add behaviour or change what the docs promise, or do a chore with a checkable result (a refactor, an upgrade) | `/yi-sdlc:impl-change` | `change` |
+| A new feature, or a change too big for one PR (`/yi-sdlc:impl-change` step 2 graduates it) | `/yi-sdlc:impl-feature` | `feature` |
 
 - Behaviour that **no doc covers** is a change: deciding what is correct there is a product decision.
 - A **mixed ticket** ("fix X and add Y") belongs to `/yi-sdlc:impl-change`, which treats the fix as one more AC.
-- When the skill you are in doesn't own the ticket, stop before touching YouTrack, git or the environment, and
+- When the skill you are in doesn't own the ticket, stop before touching the tracker, git or the environment, and
   tell the operator which command to run instead (`/yi-sdlc:impl-change <id>`). Don't switch skills yourself:
   the operator picked this one, and they may know something the ticket doesn't say.
 
-## YouTrack
+## Tracker
 
-- Use the `youtrack` MCP server only. It is logged in as **developer.yivasiuk**, so everything you write
-  shows up under that account. That's how the operator tells your actions from theirs.
-- The instance is `https://yivasiuk.youtrack.cloud`; an issue's URL is `https://yivasiuk.youtrack.cloud/issue/<id>`.
-  The project and its ID format are in profile § Tracker.
-- Don't create tags or saved searches. Anything developer.yivasiuk creates is private to it, so the operator
-  (`admin`) won't see it. Use the ones that exist.
-- The board columns are the **Stage** field. Set it with `update_custom_field`
-  (`fieldName: "Stage"`, `value: {"name": "In Progress"}`).
+Every tracker call goes through `tracker/contract.md`. The steps say `tracker.read`, `tracker.move <id>
+in-progress`, `tracker.comment`; translate each through profile § Tracker and its adapter at the moment you
+call the tool. The contract also decides whether the ticket can be taken at all (§ Taking a ticket, step 1
+of every skill) and which moves are yours (§ Moving a ticket: forward along the board's column order, or
+to `blocked`).
 
-| Stage | Who sets it | Meaning |
-|---|---|---|
-| Backlog | operator | Captured, not yet clear |
-| Ready To Start | operator | Clear enough to hand to `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change` or `/yi-sdlc:impl-feature` |
-| In Progress | **you**, when you start | You are working on it |
-| Blocked | **you** | You need the operator; your comment says what |
-| In Review | **you**, once the PR is green | Waiting for the operator's merge approval (in `auto`, only until you merge) |
-| Test | **you**, after merge, if tagged `manual-qa` | Merged, waiting for the operator's manual check |
-| Done | **you**, after merge, otherwise (operator after a manual check) | Finished |
-
-If the issue is already In Review, Test or Done, stop and tell the operator it was handled before. Backlog,
-Ready To Start and Blocked are all fine: the operator invoked you on purpose.
+- **Read the ticket** means `tracker.read`, `tracker.comments`, `tracker.links` and `tracker.attachments`
+  for `<id>`. Read the comments in full: on a re-run after `blocked`, the operator's answers are there.
+- **Check the column** means contract § Taking a ticket, including profile § Tracker's take conditions.
+- **The ticket's URL** is `tracker.url <id>`.
 
 ## SDLC mode
 
-The ticket's **`sdlc-mode`** field (a single-value enum; read it with `get_issue_custom_fields`) says how much
-of the flow the operator hands you. Read it in step 1 of your skill, every run: the operator may have changed
-it while the ticket was Blocked.
+The ticket's **`sdlc-mode`** says how much of the flow the operator hands you. Where a ticket carries it (a
+field, tags, or both) is profile § Tracker `sdlc_mode`, and tracker contract § SDLC mode says how to read
+it. Read it in step 1 of your skill, every run: the operator may have changed it while the ticket was
+`blocked`.
 
 | `sdlc-mode` | How you work |
 |---|---|
 | `auto` | The whole flow is yours, **including the merge**. The skill's planned stops (approve the ACs, ask to merge) are skipped. Stop only for a [critical stop](#critical-stops-in-auto) |
 | `semi-auto` | The skill as written: autonomous, with its planned stops |
 | `developer` | Not for autonomous work: [start an interaction](#developer-mode) instead |
-| empty, or a value not listed | `semi-auto`, and say so in your first message, so the operator can set the field |
+| nothing set, or a value or tag the profile doesn't map | `developer`, and your first message says which field value or tag would hand the ticket over (`semi-auto`, `auto`) |
 
-The field is the operator's standing order for this ticket, so `auto` overrides the skill's planned stops.
-An instruction the operator gives you in the session still wins over the field ("stop before merging",
-"show me the ACs first").
+The mode is the operator's standing order for this ticket, so `auto` overrides the skill's planned stops.
+An instruction the operator gives you in the session still wins over it ("stop before merging", "show me
+the ACs first", "go ahead on your own" on a `developer` ticket).
 
 ### Working in auto
 
@@ -106,7 +107,7 @@ instead, where the operator reads it afterwards.
 - **Merge only a PR that earned it:** every check green, the review round done, the live re-check passed.
   Merge the normal way (workflow § After approval). Never use `--admin`, never bypass branch protection or a
   required review, and never merge with a red or pending check. If `gh pr merge` refuses, leave the ticket
-  In Review and tell the operator why: that is the end of the run, not something to work around.
+  `in-review` and tell the operator why: that is the end of the run, not something to work around.
 
 ### Critical stops in auto
 
@@ -122,7 +123,7 @@ would mean guessing about something that is costly to get wrong or hard to undo:
   rewrites data the operator has.
 - Anything near money, safety or secrets that the ticket doesn't spell out, including what profile
   § Critical stops lists for this repo.
-- CI or the gates stay red after a reasonable fix attempt, or a pre-existing failure on `origin/main`
+- CI or the gates stay red after a reasonable fix attempt, or a pre-existing failure on `origin/<base>`
   blocks the merge.
 - The review still finds a correctness problem in the change after the second round.
 
@@ -136,7 +137,7 @@ The operator wants to drive this ticket themselves, with you as a pair, not to h
 the ticket (step 1's reads and the ownership check only) and look at the docs and code it points to. Then,
 before changing anything:
 
-1. Don't set the Stage, bring up the environment, create a branch, comment on the ticket or edit files.
+1. Don't move the ticket, bring up the environment, create a branch, comment on the ticket or edit files.
 2. Give the operator a short brief: what the ticket asks for, where it lives (feature, capability, screen,
    the files you would start from), what is unclear, and how you would approach it, as your skill's steps
    would.
@@ -144,113 +145,52 @@ before changing anything:
 
 From then on it's an ordinary working session. The skill's steps and this workflow are a menu to offer
 ("bring up the isolated environment?", "write the failing test first?"), not a script. Ask before each
-outward action (a Stage change, a ticket comment, a push, a PR, the merge), and follow the operator's lead
+outward action (a ticket move, a ticket comment, a push, a PR, the merge), and follow the operator's lead
 when they choose a different route.
+
+## Branches
+
+Branch names come from profile § Branches: one pattern per kind, with `{id}` (the normalized ticket ID) and
+`{slug}` (a short kebab-case summary; for `/yi-sdlc:impl-feature`, the feature's slug), and the `base`
+branch every branch starts from and every PR targets. A profile without the section gets the defaults
+below, and your first message says so.
+
+| Kind | Used by | Default pattern |
+|---|---|---|
+| `fix` | `/yi-sdlc:impl-fix` | `fix/{id}-{slug}` |
+| `change` | `/yi-sdlc:impl-change` | `change/{id}-{slug}` |
+| `feature` | `/yi-sdlc:impl-feature`, named feature | `feature/{id}-{slug}` |
+| `feature-unnamed` | `/yi-sdlc:impl-feature`, no name | `feature/{id}` |
+| `base` | every PR | `main` |
+
+On a re-run the ticket already has a branch: look for it with the kind's pattern, `{slug}` as `*`
+(`git branch --list "fix/<id>-*"`), and reuse it. Below, `<branch>` is the ticket's branch, `<base>` the
+base branch and `origin/<base>` its remote copy.
 
 ## The isolated environment
 
-All work happens in an environment of its own, so the operator's checkout and dev stack stay untouched. They
-may be using them while you work. The repo's environment script builds and removes it; profile § Environment
-names the script, what the operator's dev stack is, and what `up` gives you. Run the script from the main
-clone with the PowerShell tool, always by its absolute path in the main clone (`<main>` below is
-`git rev-parse --show-toplevel` there, or `$env:YI_SDLC_MAIN` in a tab session, § Rider tab): the worktree
-has its own copy, which would resolve its paths from the worktree and build the wrong environment. Below,
-`ticket-env.ps1` means that absolute path.
+`environment.md` is the contract: the repo's script, run by its absolute path in the main clone, with
+`up`, `status`, `restart` and `down`, plus whatever more profile § Environment lists, and the rules for
+working in the worktree. In short: edit only inside the worktree, never touch the operator's checkout or
+dev stack, and respect what profile § Environment says must never happen outside the sandbox. Below,
+`ticket-env.ps1` means the script's absolute path in the main clone.
 
-Every environment script takes these commands:
-
-| Command | Does |
-|---|---|
-| `up -Issue <id> -Branch <branch>` | Creates a git worktree on a new branch from `origin/main` (on a re-run, reuses the branch and worktree), gives it whatever it needs to run on its own, and starts the app from it. Prints JSON: the worktree path, the app's URLs, log paths |
-| `status -Issue <id>` | Prints the same JSON, plus whether each process is alive |
-| `api-restart -Issue <id>` | Rebuilds and restarts what doesn't hot-reload, from the worktree |
-| `e2e -Issue <id>` | Runs the end-to-end tests against the isolated environment |
-| `down -Issue <id> [-KeepWorktree]` | Stops everything, removes what `up` created, and the worktree (refuses if it has real uncommitted work) |
-
-Branches: `fix/<id>-<short-kebab-slug>` for `/yi-sdlc:impl-fix`, `change/<id>-<short-kebab-slug>` for
-`/yi-sdlc:impl-change`, `feature/<id>-<feature-slug>` (or `feature/<id>` for an unnamed feature) for
-`/yi-sdlc:impl-feature`.
-
-Rules that follow from it:
-- **Edit only inside the worktree** (absolute paths under the printed `worktree`), and run git and the build
-  tools there. Never change files in the main clone. That includes docs: every edit from § Docs sync goes in
-  the worktree.
-- Data the environment copies is a snapshot from `up`. Migrations, loads and deletes you run land in the copy
-  only.
-- Profile § Environment lists what the isolated app still reaches outside itself (live services, paid APIs)
-  and what you must never do there.
-
-## Rider tab
-
-Each ticket runs in a Claude session of its own, started inside its worktree, in a Rider terminal tab named
-after it, so the operator can start several tickets one after another and watch them side by side. The
-session the operator invoked is the **launcher**: it reads the ticket, checks it is the right skill, brings
-up the environment, opens the tab and ends. The session in the tab is the **tab session**: it runs the same
-command and does the actual work, from the Stage onwards.
-
-### In the tab session
-
-You are the tab session when `$env:YI_SDLC_TAB` equals `<id>`. Then skip the launch below, and:
-
-- `<main>` is `$env:YI_SDLC_MAIN` (`git rev-parse --show-toplevel` would give the worktree), and the profile
-  is `<main>\.claude\yi-sdlc\project.md`. `<branch>` is `$env:YI_SDLC_BRANCH`: the launcher chose it and
-  named the tab after it.
-- First, remove the launch configuration: `${CLAUDE_PLUGIN_ROOT}/scripts/rider-tab.ps1 -Main <main> -Id <id>
-  -Remove`. The tab stays open without it.
-- You already work in the worktree. `ticket-env.ps1 up` answers at once with the running environment's
-  JSON. Skip `EnterWorktree` and `ExitWorktree`.
-- You can't remove your own worktree: Windows keeps the folder of a running process in use. Wherever a step
-  says `ticket-env.ps1 down -Issue <id>` without `-KeepWorktree` (after the merge, or a Blocked exit with
-  nothing worth keeping), run it **with** `-KeepWorktree`. Then `git switch --detach` in the worktree, so
-  `git -C <main> branch -D <branch>` can delete the branch. The detached HEAD also tells the tab the ticket
-  is finished: when Claude exits, it removes the worktree. Your final message ends with **"Exit Claude
-  (`/exit`) to remove the worktree."**
-
-### Launch
-
-Run the work **here, in this session**, without a tab, when any of these holds, and say which in one line:
-
-- profile § Rider tab says `off`, or the operator said to stay here ("here", "no tab", `--here` in the
-  arguments);
-- `sdlc-mode` is `developer`: it is a conversation with the operator, which is already happening here;
-- the `rider` MCP server isn't connected, or `<main>` isn't among its open projects (the error of any
-  `mcp__rider__*` call lists them).
-
-Otherwise:
-
-1. Decide `<branch>` now, by the rules in § The isolated environment (for `/yi-sdlc:impl-feature`, after
-   its name step). On a re-run, the ticket already has one (`git branch --list "*/<id>-*" "*/<id>"`): reuse
-   it. The tab title is the feature's `<slug>` for `/yi-sdlc:impl-feature`, and `<branch>` for the other two.
-2. `ticket-env.ps1 up -Issue <id> -Branch <branch>`: the tab starts in the worktree, so it must exist first.
-   Keep the printed `worktree`.
-3. Run `${CLAUDE_PLUGIN_ROOT}/scripts/rider-tab.ps1 -Main <main> -Id <id> -Worktree <worktree>
-   -EnvScript <ticket-env.ps1> -Title <title> -Branch <branch> -Prompt "<the command you are running, with
-   its arguments>"`, adding `-Setup` and `-ClaudeArgs` when profile § Rider tab gives them. It copies the
-   main clone's git-ignored Claude files into the worktree, writes a Rider run configuration to
-   `<main>\.run\` (git ignores it), and prints its `name` and `file`.
-4. `mcp__rider__read_file` on that file (`rootFolder` = `<main>`): Rider only loads a new run configuration
-   once it reads the file. Then `mcp__rider__get_run_configurations` must list `name`; read the file once
-   more if it doesn't.
-5. `mcp__rider__execute_run_configuration` with `configurationName` = `name` and `waitForExit: false`. It
-   answers **"The process has failed to start" even when the tab opened**, because a run in the terminal
-   has no process for it to track. That answer is success. Any other error: remove the configuration
-   (`-Remove`), say why, and run the work here instead (the environment is already up; your skill's `up`
-   reuses it).
-6. End with one message: the ticket is running in the Rider tab `<title>`, in `<worktree>`, where its
-   questions and stops will come up. Claude may first ask there whether to trust the new folder. Don't set
-   the Stage or comment on the ticket: the tab session does that, and doing it twice would collide.
+Where the session runs, in its own Rider tab or here, is `launcher.md`. Your skill says when to launch:
+after step 1's reads and checks, before the ticket moves to `in-progress`. In a tab session, read
+launcher.md § In the tab session first: it changes where `<main>` and `<branch>` come from and how `down`
+runs.
 
 ## Get the issue ID
 
 The issue ID is mandatory. Which ticket to work on is the operator's choice, never yours. A `--here` among
-the arguments isn't part of it: it is for § Rider tab, and the launch prompt leaves it out.
+the arguments isn't part of it: it is for `launcher.md`, and the launch prompt leaves it out.
 
-- An ID in the project's format, or one profile § Tracker says to normalize (another case, an old prefix, a
-  bare number): normalize it and use it.
+- An ID matching profile § Tracker `id_pattern`, or one its normalization rules cover (another case, an old
+  prefix, a bare number): normalize it and use it.
 - Anything else, or nothing: ask the question your skill gives ("Which issue should I fix?" or "Which issue
   should I implement?", followed by "Enter its number (e.g. <an example ID from profile § Tracker>).") and end
-  your turn. Don't search YouTrack, list the board or pick an issue yourself, even when only one is open.
-  Don't touch YouTrack, git or the environment until they answer.
+  your turn. Don't search the tracker, list the board or pick an issue yourself, even when only one is open.
+  Don't touch the tracker, git or the environment until they answer.
 
 ## Test levels
 
@@ -311,7 +251,7 @@ Commit the doc edits with the change they describe, and list the files in the te
 
 All of profile § Gates must pass. Run them in the worktree.
 
-If something fails that your change didn't cause, confirm it also fails on `origin/main`, leave it alone,
+If something fails that your change didn't cause, confirm it also fails on `origin/<base>`, leave it alone,
 and report it. Profile § Gates also says which generated files a build rewrites and which diffs in them are
 noise.
 
@@ -331,8 +271,8 @@ Use the present tense and make one logical change per commit.
 ## Review
 
 Dispatch the **`yi-sdlc:reviewer`** agent (Agent tool, `subagent_type: "yi-sdlc:reviewer"`). Give it the issue
-ID, the acceptance criteria your skill names, the worktree path, and the diff range `origin/main...HEAD`.
-Stage 1 checks whether the change does what the criteria say. Stage 2 checks quality, conventions and edge
+ID, the acceptance criteria your skill names, the worktree path, and the diff range `origin/<base>...HEAD`.
+Its stage 1 checks whether the change does what the criteria say; stage 2 checks quality, conventions and edge
 cases. Also give it the doc files you updated and the names from the leftover sweep (§ Docs sync), and ask
 it to check that the docs the change touches match the code. A stale doc is a finding like any other.
 
@@ -350,22 +290,22 @@ first found a correctness problem in the change itself.
 Manual testing is needed **only** when automated tests can't cover the change: profile § Manual testing
 lists what that is in this repo (live services, how something actually looks, timing). Your live check
 doesn't count as the operator's manual test. Neither does being able to write scenarios: if the automated
-tests cover the change, manual testing isn't needed. This decides whether the issue ends in Test or Done after
-the merge.
+tests cover the change, manual testing isn't needed. This decides whether the ticket ends in `test` or `done`
+after the merge.
 
 ## PR and ticket update
 
 1. `git push -u origin <branch>` (from the worktree).
-2. `gh pr create --base main --title "<id>: <summary>" --body "<body>"`. The body links the ticket URL and
+2. `gh pr create --base <base> --title "<id>: <summary>" --body "<body>"`. The body links the ticket URL and
    holds what your skill lists for it, plus the tests, migrations or contract changes, deferred review items,
    and the manual scenarios if they're needed. In `auto`, add the mode and the decisions taken in auto. End
    it with the attribution line from the session's git instructions.
 3. Wait for the checks: `gh pr checks <number> --watch`. If CI or E2E fails, fix it, re-run the gates,
    commit, push, and wait again. This is still your job, not the operator's.
-4. Post the **business** comment, then the **technical** comment (`add_comment`, Markdown; see
+4. Post the **business** comment, then the **technical** comment (`tracker.comment`, Markdown; see
    [Ticket comments](#ticket-comments)).
-5. If manual testing is needed: `add_tag` → `manual-qa`.
-6. Set Stage → **In Review**.
+5. If manual testing is needed: `tracker.label <id> manual-qa`.
+6. `tracker.move <id> in-review`.
 
 ## Ask to merge
 
@@ -390,11 +330,11 @@ again.
 
 1. `gh pr merge <number> --squash` (squash-merge, and the remote branch is deleted), unless profile § Commits
    says the repo merges another way.
-2. Set Stage → **Test** if the issue is tagged `manual-qa`, otherwise → **Done**.
+2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> done`.
 3. Run `ticket-env.ps1 down -Issue <id>`, then `git branch -D <branch>` in the main clone (it was
-   squash-merged, so `-d` would refuse).
-4. Tell the operator: merged, the final Stage, and, if it went to Test, what to check by hand. Their own
-   checkout is untouched; `git pull` on `main` picks up the change. In `auto`, this message also carries
+   squash-merged, so `-d` would refuse). A tab session does this as launcher.md § In the tab session says.
+4. Tell the operator: merged, the final column, and, if it went to `test`, what to check by hand. Their own
+   checkout is untouched; `git pull` on `<base>` picks up the change. In `auto`, this message also carries
    the summary from § Ask to merge and the decisions taken in auto.
 
 ## Ticket comments
@@ -409,7 +349,7 @@ technical one for someone who will read the code. The first lines differ by skil
   — or, for a change —
 **Changed:** <one or two sentences in product terms: what the operator can do now that they couldn't before>
 
-**Where it shows:** Backend: <capability / operation> · UI: <screen> · DB: <tables, or "no change">
+**Where it shows:** <per part of the app, e.g. Backend: <operation> · UI: <screen> · DB: <tables, or "no change">>
 
 **Manual check:**
 1. <step>
@@ -448,11 +388,12 @@ technical one for someone who will read the code. The first lines differ by skil
 Use this when the ticket isn't workable, doesn't reproduce, is too big for the skill, or you hit a decision
 that isn't yours:
 
-1. `add_comment` with what you found and **numbered questions**, each with your best guess, so the
+1. `tracker.comment` with what you found and **numbered questions**, each with your best guess, so the
    operator can answer "1 yes, 2 the second". Mention what you already checked and tried.
-2. Set Stage → **Blocked**.
+2. `tracker.move <id> blocked`.
 3. If there's work worth keeping, commit it in the worktree as `<id>: WIP <what>`, leave it unpushed, and
    run `ticket-env.ps1 down -Issue <id> -KeepWorktree`. If there's nothing worth keeping (or no environment
    was brought up yet), run `ticket-env.ps1 down -Issue <id>` and `git branch -D <branch>` when they exist.
 4. Tell the operator in one short message that it's blocked and why. When they answer on the ticket, they
-   set it back to Ready To Start and run the same command again; `up` reuses the branch and worktree.
+   run the same command again (the skills take a ticket from `blocked`); `up` reuses the branch and
+   worktree.

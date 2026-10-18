@@ -4,7 +4,7 @@
 
     The impl-* skills use it to run a ticket in parallel with others: the configuration is a Shell Script
     with "Execute in the terminal", so Rider opens a real, interactive terminal tab named <Title> in
-    <Worktree>, sets the variables the tab session reads, runs the profile's setup commands and starts
+    <Worktree>, sets the variables the tab session reads, runs the profile's launcher setup commands and starts
     Claude with <Prompt>. Rider's MCP terminal tool can't do this: it runs commands with piped, captured I/O,
     so the tab keeps the MCP client's name and Claude can't start interactively there.
 
@@ -38,9 +38,9 @@ param(
     [string]$Branch,
     # What Claude starts with, e.g. '/yi-sdlc:impl-fix yv-12'.
     [string]$Prompt,
-    # PowerShell run in the tab before Claude starts (profile § Rider tab).
+    # PowerShell run in the tab before Claude starts (profile § Launcher).
     [string]$Setup,
-    # Extra arguments for claude, passed as written (profile § Rider tab), e.g. '--permission-mode auto'.
+    # Extra arguments for claude, passed as written (profile § Launcher), e.g. '--permission-mode auto'.
     [string]$ClaudeArgs,
     [switch]$Remove
 )

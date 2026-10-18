@@ -22,10 +22,12 @@ its conventions file (`AGENTS.md` or `CLAUDE.md`) wins over this skill where the
   (kebab-case, e.g. `tickers-loader`). Foundation work uses the prefix profile § Commits names (for
   example `survey:` / `scaffold:`).
 - `<details>` says what changed in the present tense, capitalised, one logical change per commit.
-- Work on a YouTrack ticket uses the ticket ID instead: `<id>: <details>`, on a `fix/<id>-<slug>` branch
-  (`/yi-sdlc:impl-fix`) or a `change/<id>-<slug>` branch (`/yi-sdlc:impl-change`).
-- A feature ticket built with `/yi-sdlc:impl-feature` goes on `feature/<id>-<feature-name>` and keeps the
-  `<feature-name>:` prefix; an unnamed one goes on `feature/<id>` and uses the ticket ID.
+- Work on a tracker ticket uses the ticket ID instead: `<id>: <details>`, on the branch profile § Branches
+  gives the skill (by default `fix/<id>-<slug>` for `/yi-sdlc:impl-fix`, `change/<id>-<slug>` for
+  `/yi-sdlc:impl-change`).
+- A feature ticket built with `/yi-sdlc:impl-feature` goes on its `feature` branch (by default
+  `feature/<id>-<feature-name>`) and keeps the `<feature-name>:` prefix; an unnamed one goes on its
+  `feature-unnamed` branch (by default `feature/<id>`) and uses the ticket ID.
 
 Examples: `tickers-loader: Add candle upsert`, `scaffold: Materialize the skeleton`,
 `yv-1: Stop fill gaps from failing on an empty range`.
@@ -48,4 +50,4 @@ For a non-trivial change, add a blank line and then a body wrapped at ~72 chars.
 
 - [ ] Subject is `<prefix>: <summary>` with a feature, foundation or ticket prefix
 - [ ] Present tense, capitalised, one logical change
-- [ ] Branch name matches `<group>/<name>` (`feature/`, `fix/`, `change/`, `scaffold/`, …)
+- [ ] Branch name matches profile § Branches, or `<group>/<name>` (`feature/`, `fix/`, `change/`, `scaffold/`, …)
