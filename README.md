@@ -1,20 +1,47 @@
-# Claude Code hooks
+# yi-sdlc
 
-User-level hooks for Claude Code on Windows, checked out at `~/.claude/hooks` and registered in
-`~/.claude/settings.json`:
+Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The repo is also its own marketplace
+(`yi-plugins`), so it installs with one `marketplace add`.
 
-| Hook | Event | What it does |
+| Part | Path | What it does |
 |---|---|---|
-| `ask-dialog.ps1` | `PreToolUse` (matcher `AskUserQuestion`) | Answers Claude's questions in a desktop window (see the header of the script). |
-| `notify.ps1` | `Notification`, `Stop`, `StopFailure` (async) | Shows a Windows toast. |
+| Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and All As Recommended for the rest of a session. See the script's header. |
+| Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
+| Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
+| Skill `/yi-sdlc:worktree` (alias `/yi-sdlc:wt`) | `skills/worktree`, `skills/wt`, `scripts/worktree.ps1` | Creates or reuses a git worktree for a branch, copies gitignored files and Claude memory, and opens the solution in Rider. Defaults target the EvenFlow backend; pass `-RepoPath`, `-SolutionName` for another repo. |
+| Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/workflow.md` | Take a YouTrack ticket (defect, one-PR change, or feature through the full `sdlc:*` pipeline) to a merged PR in an isolated environment. The shared flow is `ticket/workflow.md`; each repo supplies a profile, `.claude/yi-sdlc/project.md` (template: `ticket/profile-template.md`), with its tracker project, environment script, gates, test levels and docs to keep in sync. Need the `sdlc` plugin and the `youtrack` MCP server. |
+| Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
+| Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
-```json
-"PreToolUse": [{ "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "timeout": 86400,
-  "command": "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File \"$HOME/.claude/hooks/ask-dialog.ps1\"" }] }],
-"Notification": [{ "hooks": [{ "type": "command", "async": true,
-  "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME/.claude/hooks/notify.ps1\" Notification" }] }]
+Hook registrations live in `hooks/hooks.json`. The dialog keeps its state (`notification-mode`, `all-recommended\`)
+in the plugin's data dir, `~/.claude/plugins/data/<plugin id>/`, which survives plugin updates.
+
+## Install
+
+The working copy is the plugin: a marketplace added from a local path loads the plugin in place, so edits here take
+effect in the next session without reinstalling.
+
+```powershell
+git clone https://github.com/yivasyuk/yi-sdlc C:\Projects\Pet\yi-sdlc
+claude plugin marketplace add C:\Projects\Pet\yi-sdlc
+claude plugin install yi-sdlc@yi-plugins
 ```
 
-`Stop` and `StopFailure` are registered like `Notification`, with the event name as the argument.
-`ask-dialog.ps1` must stay UTF-8 with BOM: Windows PowerShell needs it to read the Ukrainian strings.
-The hooks keep local state next to themselves (`notification-mode`, `all-recommended/`); git ignores it.
+Then in `~/.claude/settings.json`:
+
+- remove any `hooks` entries for `ask-dialog.ps1` or `notify.ps1`, or every question opens two dialogs;
+- point the status line at the repo:
+
+```json
+"statusLine": { "type": "command", "command": "node \"C:/Projects/Pet/yi-sdlc/statusline/statusline.js\"", "padding": 0, "refreshInterval": 10 }
+```
+
+## Checks
+
+```powershell
+claude plugin validate C:\Projects\Pet\yi-sdlc
+```
+
+`hooks/ask-dialog.ps1` must stay UTF-8 with BOM: Windows PowerShell needs it to read its Ukrainian
+strings. `ask-dialog.ps1 -Auto submit|close` builds the dialog without showing it; the header lists the
+`ASK_DIALOG_*` variables for screenshots and translation checks.
