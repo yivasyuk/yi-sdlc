@@ -20,6 +20,10 @@ in the plugin's data dir, `~/.claude/plugins/data/<plugin id>/`, which survives 
 The working copy is the plugin: a marketplace added from a local path loads the plugin in place, so edits here take
 effect in the next session without reinstalling.
 
+It depends on the `sdlc` plugin from the `local-plugins` marketplace (`dependencies` in `plugin.json`, allowed by
+`allowCrossMarketplaceDependenciesOn` in `marketplace.json`). Add that marketplace first; installing `yi-sdlc` then
+installs `sdlc` too, and `yi-sdlc` stays disabled while `sdlc` is disabled or missing.
+
 ```powershell
 git clone https://github.com/yivasyuk/yi-sdlc C:\Projects\Pet\yi-sdlc
 claude plugin marketplace add C:\Projects\Pet\yi-sdlc

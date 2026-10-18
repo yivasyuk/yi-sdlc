@@ -6,5 +6,6 @@
   "description": "Yaroslav's user-level Claude Code kit for Windows: YouTrack ticket skills (impl-fix, impl-change, impl-feature) driven by a per-repo profile, commit conventions, a desktop dialog for Claude's questions, and toast notifications.",
   "author": { "name": "Yaroslav", "url": "https://github.com/yivasyuk" },
   "repository": "https://github.com/yivasyuk/yi-sdlc",
-  "keywords": ["sdlc", "youtrack", "tdd", "windows", "hooks", "ask-user-question", "notifications"]
+  "keywords": ["sdlc", "youtrack", "tdd", "windows", "hooks", "ask-user-question", "notifications"],
+  "dependencies": ["sdlc@local-plugins"]
 }
