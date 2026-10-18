@@ -107,7 +107,7 @@ instead, where the operator reads it afterwards.
 - **Merge only a PR that earned it:** every check green, the review round done, the live re-check passed.
   Merge the normal way (workflow § After approval). Never use `--admin`, never bypass branch protection or a
   required review, and never merge with a red or pending check. If `gh pr merge` refuses, leave the ticket
-  `in-review` and tell the operator why: that is the end of the run, not something to work around.
+  where it is and tell the operator why: that is the end of the run, not something to work around.
 
 ### Critical stops in auto
 
@@ -290,7 +290,7 @@ first found a correctness problem in the change itself.
 Manual testing is needed **only** when automated tests can't cover the change: profile § Manual testing
 lists what that is in this repo (live services, how something actually looks, timing). Your live check
 doesn't count as the operator's manual test. Neither does being able to write scenarios: if the automated
-tests cover the change, manual testing isn't needed. This decides whether the ticket ends in `test` or `done`
+tests cover the change, manual testing isn't needed. This decides whether the ticket ends in `test` or `merged`
 after the merge.
 
 ## PR and ticket update
@@ -305,7 +305,7 @@ after the merge.
 4. Post the **business** comment, then the **technical** comment (`tracker.comment`, Markdown; see
    [Ticket comments](#ticket-comments)).
 5. If manual testing is needed: `tracker.label <id> manual-qa`.
-6. `tracker.move <id> in-review`.
+6. `tracker.move <id> in-review` (no move when the board has no `in-review` column; tracker contract § Moving a ticket).
 
 ## Ask to merge
 
@@ -330,7 +330,7 @@ again.
 
 1. `gh pr merge <number> --squash` (squash-merge, and the remote branch is deleted), unless profile § Commits
    says the repo merges another way.
-2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> done`.
+2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> merged`.
 3. Run `ticket-env.ps1 down -Issue <id>`, then `git branch -D <branch>` in the main clone (it was
    squash-merged, so `-d` would refuse). A tab session does this as launcher.md § In the tab session says.
 4. Tell the operator: merged, the final column, and, if it went to `test`, what to check by hand. Their own
