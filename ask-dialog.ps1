@@ -4,6 +4,8 @@
 #   Submit            - the selected answers; recommended ones are preselected (Enter)
 #   Close             - no output, so Claude Code shows its normal terminal prompt instead
 #   Close To Terminal - same as Close, and switches notification mode to terminal (Esc)
+#   All As Recommended - ticked on Submit, the session's later questions get their recommended options
+#                       without a window (marks in all-recommended\<session id>, swept after 7 days).
 #   UA / GB flags     - translate the window in place (Ukrainian / English) via headless `claude -p`;
 #                       answers are always sent with the original question and option texts.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
@@ -45,7 +47,40 @@ if ($Mode) {
     exit 0
 }
 
-if ((Get-NotificationMode) -eq 'terminal') { exit 0 }
+$allRecommendedDir = Join-Path $PSScriptRoot 'all-recommended'
+function Get-AllRecommendedMark([string]$sessionId) {
+    if ($sessionId -notmatch '^[\w-]+$') { return $null }
+    Join-Path $allRecommendedDir $sessionId
+}
+function Set-AllRecommendedMark([string]$sessionId) {
+    $mark = Get-AllRecommendedMark $sessionId
+    if (-not $mark) { return }
+    [void](New-Item -ItemType Directory -Force -Path $allRecommendedDir)
+    Get-ChildItem -LiteralPath $allRecommendedDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
+    [IO.File]::WriteAllText($mark, (Get-Date).ToString('o'))
+}
+
+function Get-Recommended($q) {
+    $opts = @($q.options)
+    $rec = @($opts | Where-Object { $_.label -match '\(recommended\)' } | ForEach-Object { $_.label })
+    if ($rec.Count -eq 0 -and $opts.Count -gt 0) { $rec = @($opts[0].label) }
+    if (-not $q.multiSelect) { $rec = @($rec | Select-Object -First 1) }
+    return ,$rec
+}
+
+function Write-Answers($toolInput, $answers, [string]$reason, [string]$context) {
+    $toolInput | Add-Member -NotePropertyName answers -NotePropertyValue ([pscustomobject]$answers) -Force
+    $result = @{
+        hookSpecificOutput = @{
+            hookEventName            = 'PreToolUse'
+            permissionDecision       = 'allow'
+            permissionDecisionReason = $reason
+            updatedInput             = $toolInput
+        }
+    }
+    if ($context) { $result.hookSpecificOutput.additionalContext = $context }
+    [Console]::Out.Write((ConvertTo-Json -InputObject $result -Depth 20 -Compress))
+}
 
 try {
     $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -55,6 +90,22 @@ try {
 
     # PS 5.1 otherwise serializes some arrays as {"value":[...],"Count":n}.
     Remove-TypeData -TypeName System.Array -ErrorAction SilentlyContinue
+
+    # All As Recommended was ticked earlier in this session: answer without asking, in either mode.
+    $mark = Get-AllRecommendedMark $payload.session_id
+    if ($mark -and (Test-Path -LiteralPath $mark)) {
+        $answers = [ordered]@{}
+        foreach ($q in $questions) {
+            $rec = Get-Recommended $q
+            if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
+        }
+        Write-Answers $toolInput $answers 'Answered with the recommended options (All As Recommended)' (
+            'The user ticked All As Recommended earlier in this session, so these questions were not shown to them: ' +
+            'each was answered with its recommended option (the first option when none is marked).')
+        exit 0
+    }
+
+    if ((Get-NotificationMode) -eq 'terminal') { exit 0 }
 
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     Add-Type -Name Native -Namespace ClaudeHook -MemberDefinition @'
@@ -119,14 +170,6 @@ namespace ClaudeHook {
     [void][ClaudeHook.Native]::SetProcessDPIAware()
     [Windows.Forms.Application]::EnableVisualStyles()
 
-    function Get-Recommended($q) {
-        $opts = @($q.options)
-        $rec = @($opts | Where-Object { $_.label -match '\(recommended\)' } | ForEach-Object { $_.label })
-        if ($rec.Count -eq 0 -and $opts.Count -gt 0) { $rec = @($opts[0].label) }
-        if (-not $q.multiSelect) { $rec = @($rec | Select-Object -First 1) }
-        return ,$rec
-    }
-
     $ui = @{
         en = @{
             Title = 'Claude Code needs your answer'; Submit = 'Submit'; ToTerminal = 'Close To Terminal'; Close = 'Close'
@@ -137,6 +180,8 @@ namespace ClaudeHook {
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
             TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with /notification-mode desktop.'
+            AllRecommended = 'All As Recommended'
+            AllRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
             LanguageName = 'English'
         }
         uk = @{
@@ -148,6 +193,8 @@ namespace ClaudeHook {
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
             TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: /notification-mode desktop.'
+            AllRecommended = 'Усі як рекомендовано'
+            AllRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
             LanguageName = 'Українська'
         }
     }
@@ -155,36 +202,57 @@ namespace ClaudeHook {
     $origLang = if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' }
     $script:lang = $origLang
 
-    # Title context: project (git repo or cwd), branch, and SDLC feature (docs/features/<slug>
-    # matching the branch, else the one with the most recently edited files).
+    # Title context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
+    # feature (docs/features/<slug>) the branch names, else the one it changes: uncommitted changes first,
+    # then its commits since the default branch, newest first. No such feature, or a fix/ or change/
+    # branch, no Feature field.
     $context = [ordered]@{}
     if ($payload.cwd) {
         $root = $payload.cwd
+        $project = Split-Path -Leaf $root
         $branch = ''
+        $changed = @()
         try {
             $ErrorActionPreference = 'Continue'  # git writes to stderr outside a repo
             $repoRoot = git -C $payload.cwd rev-parse --show-toplevel 2>$null
             if ($LASTEXITCODE -eq 0 -and $repoRoot) {
                 $root = $repoRoot
-                $branch = git -C $payload.cwd rev-parse --abbrev-ref HEAD 2>$null
-                if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $payload.cwd rev-parse --short HEAD 2>$null) }
+                $project = Split-Path -Leaf $root
+                # A worktree's folder is named after its branch; the shared .git sits in the main checkout.
+                $commonDir = git -C $root rev-parse --path-format=absolute --git-common-dir 2>$null
+                if ($LASTEXITCODE -eq 0 -and $commonDir -and (Split-Path -Leaf $commonDir) -eq '.git') {
+                    $project = Split-Path -Leaf (Split-Path -Parent $commonDir)
+                }
+                $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
+                if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $root rev-parse --short HEAD 2>$null) }
+
+                $changed += @(git -C $root -c core.quotepath=off status --porcelain --untracked-files=all -- docs/features 2>$null |
+                    ForEach-Object { $_.Substring(3) -replace '^.* -> ', '' })
+                $default = git -C $root rev-parse --abbrev-ref origin/HEAD 2>$null
+                if ($LASTEXITCODE -ne 0 -or -not $default) { $default = 'main' }
+                $base = git -C $root merge-base HEAD $default 2>$null
+                if ($LASTEXITCODE -eq 0 -and $base) {
+                    $changed += @(git -C $root -c core.quotepath=off log --format= --name-only "$base..HEAD" -- docs/features 2>$null)
+                }
             }
         } catch {} finally { $ErrorActionPreference = 'Stop' }
-        $context['Project'] = Split-Path -Leaf $root
+        $context['Project'] = $project
         if ($branch) { $context['Branch'] = $branch }
 
         $featuresDir = Join-Path $root 'docs\features'
         if (Test-Path $featuresDir) {
             $slugs = @(Get-ChildItem -LiteralPath $featuresDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '_*' })
-            $feature = $slugs | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_.Name))($|[/_-])" } |
-                Sort-Object { $_.Name.Length } -Descending | Select-Object -First 1
-            if (-not $feature) {
-                $feature = $slugs | Sort-Object {
-                    Get-ChildItem -LiteralPath $_.FullName -File -Recurse -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty LastWriteTime
-                } -Descending | Select-Object -First 1
+            $slugNames = @($slugs | ForEach-Object { $_.Name })
+            # A fix or a change branch works on a ticket, not on a feature.
+            if ($branch -notmatch '^(fix|change)/') {
+                $feature = $slugNames | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_))($|[/_-])" } |
+                    Sort-Object { $_.Length } -Descending | Select-Object -First 1
+                if (-not $feature) {
+                    $feature = $changed | Where-Object { $_ -match '^"?docs/features/([^/]+)/' } |
+                        ForEach-Object { $Matches[1] } | Where-Object { $slugNames -contains $_ } | Select-Object -First 1
+                }
+                if ($feature) { $context['Feature'] = $feature }
             }
-            if ($feature) { $context['Feature'] = $feature.Name }
         }
     }
     if ($context.Count -eq 0) { $context['Project'] = '(unknown)' }
@@ -1092,16 +1160,32 @@ $content
         }
     })
 
-    $bar = New-Object Windows.Forms.FlowLayoutPanel
+    # The bottom row: All As Recommended on the left, the buttons (and the status) from the right.
+    $bar = New-Object Windows.Forms.TableLayoutPanel
     $bar.Dock = 'Bottom'
-    $bar.FlowDirection = 'RightToLeft'
     $bar.AutoSize = $true
+    $bar.ColumnCount = 2
+    $bar.RowCount = 1
+    [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
+    [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
     $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
+    $allRecommended = New-Object Windows.Forms.CheckBox
+    $allRecommended.AutoSize = $true
+    $allRecommended.Anchor = 'Left'
+    $allRecommended.Checked = [bool]$env:ASK_DIALOG_ALL
+    $bar.Controls.Add($allRecommended, 0, 0)
+    $buttons = New-Object Windows.Forms.FlowLayoutPanel
+    $buttons.FlowDirection = 'RightToLeft'
+    $buttons.AutoSize = $true
+    $buttons.Dock = 'Fill'
+    $buttons.Margin = New-Object Windows.Forms.Padding(0)
+    $bar.Controls.Add($buttons, 1, 0)
     $mkButton = {
         $b = New-Object Windows.Forms.Button
         $b.AutoSize = $true
         $b.MinimumSize = New-Object Drawing.Size((& $px 100), (& $px 32))
-        $bar.Controls.Add($b)
+        $buttons.Controls.Add($b)
         $b
     }
     $closeBtn = & $mkButton
@@ -1110,7 +1194,7 @@ $content
     $status = New-Object Windows.Forms.Label
     $status.AutoSize = $true
     $status.Margin = New-Object Windows.Forms.Padding(0, (& $px 8), (& $px 10), 0)
-    $bar.Controls.Add($status)
+    $buttons.Controls.Add($status)
     function Show-Status([string]$text, [bool]$isError) {
         $status.ForeColor = if ($isError) { [Drawing.Color]::Firebrick } else { $gray }
         $status.Text = $text
@@ -1160,6 +1244,8 @@ $content
         $terminalBtn.Text = $t.ToTerminal
         $closeBtn.Text = $t.Close
         $tips.SetToolTip($terminalBtn, $t.TerminalTip)
+        $allRecommended.Text = $t.AllRecommended
+        $tips.SetToolTip($allRecommended, $t.AllRecommendedTip)
         foreach ($code in $flags.Keys) {
             $flags[$code].FlatAppearance.BorderColor = if ($code -eq $lang) { [Drawing.Color]::White } else { $headerColor }
         }
@@ -1353,17 +1439,12 @@ $content
         if ($labels.Count -gt 0) { $answers[$e.Question.question] = $labels -join ', ' }
     }
 
-    $toolInput | Add-Member -NotePropertyName answers -NotePropertyValue ([pscustomobject]$answers) -Force
-    $result = @{
-        hookSpecificOutput = @{
-            hookEventName            = 'PreToolUse'
-            permissionDecision       = 'allow'
-            permissionDecisionReason = 'Answered in the desktop dialog'
-            updatedInput             = $toolInput
-        }
+    if ($allRecommended.Checked) {
+        Set-AllRecommendedMark $payload.session_id
+        $allNote = 'The user ticked All As Recommended: their later questions in this session are answered with the recommended options without being shown.'
+        $noteContext = if ($noteContext) { "$noteContext`n`n$allNote" } else { $allNote }
     }
-    if ($noteContext) { $result.hookSpecificOutput.additionalContext = $noteContext }
-    [Console]::Out.Write((ConvertTo-Json -InputObject $result -Depth 20 -Compress))
+    Write-Answers $toolInput $answers 'Answered in the desktop dialog' $noteContext
 } catch {
     # Any failure falls back to the normal terminal prompt.
     [Console]::Error.WriteLine("ask-dialog: $_")
