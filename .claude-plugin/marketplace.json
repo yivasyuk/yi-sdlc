@@ -9,7 +9,7 @@
     {
       "name": "yi-sdlc",
       "source": "./",
-      "description": "Desktop question dialog, toast notifications and git worktree skills for Claude Code on Windows."
+      "description": "YouTrack ticket skills, commit conventions, a desktop question dialog and toast notifications for Claude Code on Windows."
     }
   ]
 }
