@@ -4,11 +4,11 @@ description: >-
   Implement a YouTrack change request (an enhancement, new or changed behaviour, a task) end to end by its ID
   in an isolated environment (its own worktree, in a Rider terminal tab named after it): check it fits one
   PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it
-  test-first, review with sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back
+  test-first, review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back
   on the ticket, and merge after the operator approves. The ticket's sdlc-mode field sets the autonomy: auto
   (self-approves the ACs and merges, stops only on critical issues), semi-auto (asks at both stops) or
   developer (briefs the operator and works with them interactively). Defects go to /yi-sdlc:impl-fix; work
-  too big for one PR goes to /yi-sdlc:impl-feature (the full sdlc pipeline). Needs the repo's
+  too big for one PR goes to /yi-sdlc:impl-feature (the full SDLC pipeline). Needs the repo's
   .claude/yi-sdlc/project.md.
 disable-model-invocation: true
 argument-hint: <youtrack-issue-id, required, e.g. yv-2> [--here]
@@ -40,7 +40,7 @@ PR, merge, ticket comments and the Blocked exit. The profile holds what is parti
 steps below point into them as "workflow § <section>" and "profile § <section>".
 
 This skill sits between two other routes. `/yi-sdlc:impl-fix` handles defects. `/yi-sdlc:impl-feature` runs
-the full `sdlc` pipeline (`sdlc:interview`, `sdlc:write-prd`…) for new features. This skill handles changes
+the full SDLC pipeline (`yi-sdlc:interview`, `yi-sdlc:write-prd`…) for new features. This skill handles changes
 to an existing feature that fit one PR. Step 2 is where a ticket that has outgrown it leaves.
 
 ## 0. Get the issue ID
@@ -81,7 +81,7 @@ normalized ID.
 
 ## 2. Check that it fits one PR
 
-The change **graduates** to the full `sdlc` pipeline if any of these hold:
+The change **graduates** to the full SDLC pipeline if any of these hold:
 
 - It needs what profile § Change scope names as too big for a change (a new module or capability), or an
   area no PRD covers that is bigger than a screen.
@@ -137,7 +137,7 @@ the change has to land there, not only in code.
 Every AC has to be checkable by a test or by the live demo in step 11. If you can't say how you'd check
 one, it isn't finished.
 
-Then dispatch **`sdlc:devils-advocate`** (Agent tool, mode A, the ambiguity hunt). Point it at the PRD and
+Then dispatch **`yi-sdlc:devils-advocate`** (Agent tool, mode A, the ambiguity hunt). Point it at the PRD and
 the ticket text, and limit it to the new and changed ACs. Work through each finding. Tighten the AC when
 the repo docs answer it. Otherwise turn it into a numbered question with your best guess for the stop.
 

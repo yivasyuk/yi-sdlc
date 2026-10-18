@@ -3,7 +3,7 @@ name: impl-fix
 description: >-
   Fix a YouTrack defect end to end by its ID in an isolated environment (its own worktree, in a Rider
   terminal tab named after it): reproduce it on a running copy of the app, pin it with a failing test, fix,
-  review with sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the
+  review with yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the
   operator approves. The ticket's sdlc-mode field sets the autonomy: auto (merges without asking, stops only
   on critical issues), semi-auto (asks before merging) or developer (briefs the operator and works with them
   interactively). For a defect only: behaviour the docs already promise. New or changed behaviour goes to

@@ -2,7 +2,7 @@
 
 These skills take one YouTrack ticket from the board to a merged PR, working in an isolated environment. They
 differ in the first half: a fix restores behaviour the docs already promise, a change decides new behaviour
-and gets it approved before building, and a feature goes through the full `sdlc:*` pipeline. Everything
+and gets it approved before building, and a feature goes through the full `yi-sdlc:*` pipeline. Everything
 else is the same and lives here. Each skill's numbered steps say which section to follow and when, so follow
 them in the skill's order. The sections below are reference, not a sequence.
 
@@ -114,7 +114,7 @@ Stop and wait for the operator (workflow § Blocked exit, so the question lands 
 would mean guessing about something that is costly to get wrong or hard to undo:
 
 - The ticket isn't workable, the defect doesn't reproduce, or the skill sends it elsewhere (wrong skill,
-  graduates to the full `sdlc` pipeline). These exits are the same in every mode.
+  graduates to the full SDLC pipeline). These exits are the same in every mode.
 - A product decision with **no defensible best guess**: two readings lead to clearly different features,
   and the docs don't pick one.
 - Anything that **reverses** a PRD non-goal, an ADR or an earlier decision override.
@@ -330,8 +330,8 @@ Use the present tense and make one logical change per commit.
 
 ## Review
 
-Dispatch the **`sdlc:reviewer`** agent (Agent tool, `subagent_type: "sdlc:reviewer"`). Give it the issue ID,
-the acceptance criteria your skill names, the worktree path, and the diff range `origin/main...HEAD`.
+Dispatch the **`yi-sdlc:reviewer`** agent (Agent tool, `subagent_type: "yi-sdlc:reviewer"`). Give it the issue
+ID, the acceptance criteria your skill names, the worktree path, and the diff range `origin/main...HEAD`.
 Stage 1 checks whether the change does what the criteria say. Stage 2 checks quality, conventions and edge
 cases. Also give it the doc files you updated and the names from the leftover sweep (§ Docs sync), and ask
 it to check that the docs the change touches match the code. A stale doc is a finding like any other.

@@ -2,7 +2,7 @@
 name: impl-feature
 description: >-
   Build a YouTrack feature ticket through the whole SDLC pipeline in an isolated environment (its own
-  worktree, in a Rider terminal tab named after it): take an optional feature name, then run sdlc:interview,
+  worktree, in a Rider terminal tab named after it): take an optional feature name, then run yi-sdlc:interview,
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
@@ -18,7 +18,7 @@ effort: xhigh
 
 # Implement a YouTrack feature
 
-Take one feature ticket from the board to a merged PR by running the full `sdlc:*` pipeline, stage by
+Take one feature ticket from the board to a merged PR by running the full `yi-sdlc:*` pipeline, stage by
 stage, inside the same isolated environment `/yi-sdlc:impl-fix` and `/yi-sdlc:impl-change` use. The stages
 do the product and design work and ask the operator their own questions; this skill picks the stages, feeds
 them the ticket, keeps them in the worktree, and wraps them in the ticket workflow (Stage, comments, PR,
@@ -55,7 +55,7 @@ The arguments are: `$ARGUMENTS`.
   `--depth=<level>`. Missing means **`easy`**. Anything else: ask once which of the three they meant. Below,
   `<depth>` is the level.
 
-`<depth>` is the `sdlc` depth dial (`interview_depth`): it sets how many questions the Q&A stages ask and
+`<depth>` is the SDLC depth dial (`interview_depth`): it sets how many questions the Q&A stages ask and
 which analyses they run, never what they cover. `easy` decides the reversible calls with defaults and
 shows the assumptions to veto; `medium` walks the real decisions; `hard` walks every decision and runs the
 full analysis suite (researcher, strategist, analyst, devil's advocate). The operator chose it with this
@@ -115,7 +115,7 @@ the tab session doesn't ask for it.
 2. Set Stage → **In Progress**.
 3. `ticket-env.ps1 up -Issue <id> -Branch <branch>`. Keep the printed JSON. On a re-run, `up` reuses the
    branch and worktree and restarts what isn't running.
-4. **Enter the worktree:** `EnterWorktree` with `path` = the printed `worktree`. The `sdlc:*` stages write
+4. **Enter the worktree:** `EnterWorktree` with `path` = the printed `worktree`. The `yi-sdlc:*` stages write
    `docs/features/<slug>/…` and run git relative to the working directory, so the session itself has to
    be in the worktree, not only your own edits. Check with `git branch --show-current`.
 5. Copy `<main>\.claude\sdlc.local.md` into the worktree's `.claude\` if it exists and isn't there. It is
@@ -142,7 +142,7 @@ except at the three gates (step 6).
   continuing* lines (they're the operator's per-stage checklist) and continue. Auto-compaction handles the
   length. If the context gets heavy anyway, the operator can `/clear` at any stage boundary and re-run
   `/yi-sdlc:impl-feature <id> <depth>`; the skill resumes (below).
-- **Pass `--depth=<depth>`** to every stage that takes it. `sdlc:interview` opens with a mandatory depth
+- **Pass `--depth=<depth>`** to every stage that takes it. `yi-sdlc:interview` opens with a mandatory depth
   question of its own: tell it in the args that the operator already chose `<depth>` via
   `/yi-sdlc:impl-feature`, and give that as the answer if it still asks.
 - **Brief the interview with the ticket**: title, description, comments, links and attachments as the raw
@@ -153,23 +153,23 @@ except at the three gates (step 6).
 
 | # | Stage | Run | Done when |
 |---|---|---|---|
-| 1 | Ideation | `sdlc:interview <slug>` | `idea-brief.md` with `status: Confirmed` |
-| 2 | PRD | `sdlc:write-prd <slug>` | `PRD.md` and `.size` |
-| 3 | Clarify | `sdlc:clarify-prd <slug>` | every ambiguity resolved or in §8 with an owner |
+| 1 | Ideation | `yi-sdlc:interview <slug>` | `idea-brief.md` with `status: Confirmed` |
+| 2 | PRD | `yi-sdlc:write-prd <slug>` | `PRD.md` and `.size` |
+| 3 | Clarify | `yi-sdlc:clarify-prd <slug>` | every ambiguity resolved or in §8 with an owner |
 | — | **Gate 1: the PRD** | step 6 | approval in the **Feature pipeline** comment |
-| 4 | Architecture | `sdlc:architecture-design <slug>` | `sad.md` finalized after the critic, its ADRs Accepted |
-| 5 | Sequences | `sdlc:complete-sequence-diagrams <slug>` | `sad.md` §6 flows with AC coverage |
+| 4 | Architecture | `yi-sdlc:architecture-design <slug>` | `sad.md` finalized after the critic, its ADRs Accepted |
+| 5 | Sequences | `yi-sdlc:complete-sequence-diagrams <slug>` | `sad.md` §6 flows with AC coverage |
 | — | **Gate 2: the architecture** | step 6 | approval in the **Feature pipeline** comment |
-| 6 | Data model | `sdlc:generate-data-model <slug>` | `data-model.md` + staged `migrations/`. Skip when §5/§6 add no persistence |
-| 7 | API contract | `sdlc:api-forge <slug>` | `contracts/openapi.yaml` + `api-sync-report.md`. Skip when the SAD adds or changes no endpoint |
-| 8 | Design spec | `sdlc:prepare-design-spec <slug>` | `design-spec.md`. Only when `target_surfaces` includes `web` |
-| 9 | Tasks | `sdlc:break-tasks <slug>` | `tasks/tasks.json` + `tracker.md` |
-| 10 | Test plan | `sdlc:plan-tests <slug>` | `test-plan.md` |
+| 6 | Data model | `yi-sdlc:generate-data-model <slug>` | `data-model.md` + staged `migrations/`. Skip when §5/§6 add no persistence |
+| 7 | API contract | `yi-sdlc:api-forge <slug>` | `contracts/openapi.yaml` + `api-sync-report.md`. Skip when the SAD adds or changes no endpoint |
+| 8 | Design spec | `yi-sdlc:prepare-design-spec <slug>` | `design-spec.md`. Only when `target_surfaces` includes `web` |
+| 9 | Tasks | `yi-sdlc:break-tasks <slug>` | `tasks/tasks.json` + `tracker.md` |
+| 10 | Test plan | `yi-sdlc:plan-tests <slug>` | `test-plan.md` |
 | — | **Gate 3: the plan, before code** | step 6 | approval in the **Feature pipeline** comment |
-| 11 | Implementation | `sdlc:implement-tasks <slug>` | every task done in `tracker.md`, migrations promoted |
-| 12 | Review | `sdlc:review-feature <slug>` | `_review/review-<date>.md` shows PASS |
+| 11 | Implementation | `yi-sdlc:implement-tasks <slug>` | every task done in `tracker.md`, migrations promoted |
+| 12 | Review | `yi-sdlc:review-feature <slug>` | `_review/review-<date>.md` shows PASS |
 | 13 | Live check | step 7 | |
-| 14 | Ship | `sdlc:ship-feature <slug>` (step 8) | `CHANGELOG.md`, `pr-body.md`, roadmap item Shipped |
+| 14 | Ship | `yi-sdlc:ship-feature <slug>` (step 8) | `CHANGELOG.md`, `pr-body.md`, roadmap item Shipped |
 
 A skipped stage is a decision: name it and why in the **Feature pipeline** comment, so the next stage (and
 the reviewer) knows it was meant.
@@ -203,7 +203,7 @@ stage itself picks up from what is on disk.
 
 At each gate, show the operator a compact summary of what the stages since the last gate decided, ask
 **"Continue to <next stage>?"**, and wait. A change goes back to the stage that owns it (an AC →
-`clarify-prd` or an edit to the PRD; a decision → `architecture-design`, or `sdlc:decide-adr` for one more
+`clarify-prd` or an edit to the PRD; a decision → `architecture-design`, or `yi-sdlc:decide-adr` for one more
 ADR), and every later stage that read it is re-checked; then ask again. Record each approval in the
 **Feature pipeline** comment, so a re-run doesn't ask twice.
 
@@ -226,7 +226,7 @@ After the review passes, run `ticket-env.ps1 api-restart -Issue <id>` (so what d
 promoted migrations, reach the isolated copy). Then show that the ACs hold on the running app, not only in
 tests, the ways profile § Live check gives:
 
-- `web` in `target_surfaces` → `sdlc:verify-ui <slug>` against the isolated UI URL (not the operator's dev
+- `web` in `target_surfaces` → `yi-sdlc:verify-ui <slug>` against the isolated UI URL (not the operator's dev
   one).
 - Api behaviour → call the isolated Api with `curl` and keep the request and response.
 - Neighbouring flows the feature touches still work.
@@ -236,7 +236,7 @@ An AC you can't show working goes back to `implement-tasks` with what you saw. K
 
 ## 8. Ship
 
-Run `sdlc:ship-feature <slug>`, with three adjustments to what it does by default:
+Run `yi-sdlc:ship-feature <slug>`, with three adjustments to what it does by default:
 
 - Its final verification is step 7 plus workflow § Gates, so run the gates there, including the end-to-end
   run when profile § Gates calls for it.

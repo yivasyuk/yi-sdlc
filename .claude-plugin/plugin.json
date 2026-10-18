@@ -2,10 +2,24 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "yi-sdlc",
   "displayName": "YI SDLC",
-  "version": "0.1.0",
-  "description": "Yaroslav's user-level Claude Code kit for Windows: YouTrack ticket skills (impl-fix, impl-change, impl-feature) driven by a per-repo profile, commit conventions, a desktop dialog for Claude's questions, and toast notifications.",
-  "author": { "name": "Yaroslav", "url": "https://github.com/yivasyuk" },
+  "version": "0.2.0",
+  "description": "Yaroslav's user-level Claude Code kit for Windows: the full SDLC pipeline (the sdlc plugin by Kyrylo Genkov, imported under the yi-sdlc namespace: 21 skills and 11 agents from map-architecture and interview to ship-feature), YouTrack ticket skills (impl-fix, impl-change, impl-feature) driven by a per-repo profile and run in parallel Rider tabs, commit conventions, a desktop dialog for Claude's questions, and toast notifications.",
+  "author": {
+    "name": "Yaroslav",
+    "url": "https://github.com/yivasyuk"
+  },
   "repository": "https://github.com/yivasyuk/yi-sdlc",
-  "keywords": ["sdlc", "youtrack", "tdd", "windows", "hooks", "ask-user-question", "notifications"],
-  "dependencies": ["sdlc@local-plugins"]
+  "keywords": [
+    "sdlc",
+    "prd",
+    "adr",
+    "architecture",
+    "tdd",
+    "youtrack",
+    "rider",
+    "windows",
+    "hooks",
+    "ask-user-question",
+    "notifications"
+  ]
 }
