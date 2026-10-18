@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "yi-sdlc",
+  "displayName": "YI SDLC",
+  "version": "0.1.0",
+  "description": "Yaroslav's user-level Claude Code kit for Windows: a desktop dialog for Claude's questions, toast notifications, and git worktree skills.",
+  "author": { "name": "Yaroslav", "url": "https://github.com/yivasyuk" },
+  "repository": "https://github.com/yivasyuk/yi-sdlc",
+  "keywords": ["windows", "hooks", "ask-user-question", "notifications", "worktree"]
+}

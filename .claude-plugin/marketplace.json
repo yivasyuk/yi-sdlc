@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "yi-plugins",
+  "description": "Yaroslav's personal Claude Code plugins.",
+  "owner": {
+    "name": "Yaroslav"
+  },
+  "plugins": [
+    {
+      "name": "yi-sdlc",
+      "source": "./",
+      "description": "Desktop question dialog, toast notifications and git worktree skills for Claude Code on Windows."
+    }
+  ]
+}

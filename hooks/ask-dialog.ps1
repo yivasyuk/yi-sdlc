@@ -1,4 +1,4 @@
-﻿param([string]$Auto = '', [string]$Mode = '')
+﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '')
 
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
 #   Submit            - the selected answers; recommended ones are preselected (Enter)
@@ -13,8 +13,9 @@
 #                       passed as [Image #n] file paths). Sent as additionalContext with Submit/Close.
 #   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4) a question
 #                       mentions are links under it; a click shows that section beside the window.
-# Notification mode (desktop | terminal) is stored per user in notification-mode next to this script.
-# -Mode desktop|terminal|toggle|status manages it from a shell (used by the /notification-mode skill).
+# State (notification-mode, all-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
+# (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
+# -Mode desktop|terminal|toggle|status manages the notification mode from a shell (/yi-sdlc:notification-mode).
 # -Auto submit|close builds the window without showing it (for testing); env ASK_DIALOG_TRANSLATE=uk|en
 # translates first, ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an
 # image and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also
@@ -25,7 +26,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-$modeFile = Join-Path $PSScriptRoot 'notification-mode'
+$dataDir = if ($DataDir) { $DataDir } elseif ($env:CLAUDE_PLUGIN_DATA) { $env:CLAUDE_PLUGIN_DATA } else { $PSScriptRoot }
+[void](New-Item -ItemType Directory -Force -Path $dataDir)
+$modeFile = Join-Path $dataDir 'notification-mode'
 function Get-NotificationMode {
     $value = if (Test-Path $modeFile) { (Get-Content -LiteralPath $modeFile -Raw).Trim() } else { '' }
     if ($value -eq 'terminal') { 'terminal' } else { 'desktop' }
@@ -47,7 +50,7 @@ if ($Mode) {
     exit 0
 }
 
-$allRecommendedDir = Join-Path $PSScriptRoot 'all-recommended'
+$allRecommendedDir = Join-Path $dataDir 'all-recommended'
 function Get-AllRecommendedMark([string]$sessionId) {
     if ($sessionId -notmatch '^[\w-]+$') { return $null }
     Join-Path $allRecommendedDir $sessionId
@@ -179,7 +182,7 @@ namespace ClaudeHook {
             Missing = 'Answer every question ({0} left)'; Translating = 'Translating...'; Failed = 'Translation failed'
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
-            TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with /notification-mode desktop.'
+            TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with /yi-sdlc:notification-mode desktop.'
             AllRecommended = 'All As Recommended'
             AllRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
             LanguageName = 'English'
@@ -192,7 +195,7 @@ namespace ClaudeHook {
             Missing = 'Дайте відповідь на всі питання (залишилось {0})'; Translating = 'Перекладаю...'; Failed = 'Не вдалося перекласти'
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
-            TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: /notification-mode desktop.'
+            TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: /yi-sdlc:notification-mode desktop.'
             AllRecommended = 'Усі як рекомендовано'
             AllRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
             LanguageName = 'Українська'
