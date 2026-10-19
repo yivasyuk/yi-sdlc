@@ -9,8 +9,9 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
-| Skills `/yi-sdlc:implementation-fix`, `/yi-sdlc:implementation-change`, `/yi-sdlc:implementation-feature` | `skills/implementation-*`, `ticket/` | Take a tracker ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. See [The ticket kit](#the-ticket-kit). |
+| Skills `/yi-sdlc:implement-fix`, `/yi-sdlc:implement-change`, `/yi-sdlc:implement-feature` | `skills/implement-{fix,change,feature}`, `ticket/` | Take a tracker ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. See [The ticket kit](#the-ticket-kit). |
 | Skill `/yi-sdlc:run-application` | `skills/run-application` | Starts the app (backend, frontend, the rest) from the main clone or any worktree, each on its own ports so parallel sessions run side by side, and answers with checked links. Drives the repo's `.claude/yi-sdlc/run-app.ps1` (`up`, `status`, `restart`, `down`, `list`; the interface: `run-script.md`), and writes one from the bundled template when the repo has none. |
+| Skill `/yi-sdlc:complete` | `skills/complete` | Lands the session's work in one command: branches off main if needed, commits this session's changes, opens a PR, waits for its builds and squash-merges it once they pass (or right away when the repo has no CI). Operator-only. |
 | Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
@@ -44,7 +45,7 @@ Everything generic about ticket work lives in `ticket/`; what is particular to a
 
 | Plugin (`ticket/`) | What it holds |
 |---|---|
-| `workflow.md` | The flow `implementation-fix`, `implementation-change` and `implementation-feature` share: SDLC mode, branches, test levels, docs sync, gates, review, PR, merge, ticket comments, the Blocked exit |
+| `workflow.md` | The flow `implement-fix`, `implement-change` and `implement-feature` share: SDLC mode, branches, test levels, docs sync, gates, review, PR, merge, ticket comments, the Blocked exit |
 | `tracker/contract.md` | The abstract tracker: column roles (`in-progress`, `blocked`, `merged`, and optionally `in-review` and `test`), which tickets can be taken and which moves the agent makes (forward along the board's order, or to `blocked`), how `sdlc-mode` is read (default `developer`), the `manual-qa` label, and the `tracker.<operation>`s |
 | `tracker/youtrack.md`, `tracker/jira.md` | Adapters: setting up the tracker's MCP server (YouTrack MCP; Atlassian Rovo MCP, v2 and v1) and which of its tools carries out each operation |
 | `environment.md` | The interface a repo's isolated environment script implements (`up`, `status`, `restart`, `down`); the plugin has no environment code |

@@ -2,11 +2,12 @@
 .SYNOPSIS
     Writes (or removes) the Rider run configuration that opens a ticket's own terminal tab in its worktree.
 
-    The implementation-* skills use it to run a ticket in parallel with others: the configuration is a Shell Script
-    with "Execute in the terminal", so Rider opens a real, interactive terminal tab named <Title> in
-    <Worktree>, sets the variables the tab session reads, runs the profile's launcher setup commands and starts
-    Claude with <Prompt>. Rider's MCP terminal tool can't do this: it runs commands with piped, captured I/O,
-    so the tab keeps the MCP client's name and Claude can't start interactively there.
+    The implement-fix, implement-change and implement-feature skills use it to run a ticket in parallel with
+    others: the configuration is a Shell Script with "Execute in the terminal", so Rider opens a real,
+    interactive terminal tab named <Title> in <Worktree>, sets the variables the tab session reads, runs the
+    profile's launcher setup commands and starts Claude with <Prompt>. Rider's MCP terminal tool can't do this:
+    it runs commands with piped, captured I/O, so the tab keeps the MCP client's name and Claude can't start
+    interactively there.
 
     A running process keeps its folder in use on Windows, so the tab session can't remove its own worktree.
     When Claude exits, the tab steps out to <Main> and, if the worktree's HEAD is detached (the tab session
@@ -20,7 +21,7 @@
 .EXAMPLE
     .\rider-tab.ps1 -Main C:\Projects\Pet\yavias -Id yv-12 -Worktree C:\Projects\Pet\yavias-WT\yv-12 `
         -EnvScript C:\Projects\Pet\yavias\.claude\yi-sdlc\ticket-env.ps1 -Title fix/yv-12-fill-gaps-error `
-        -Branch fix/yv-12-fill-gaps-error -Prompt '/yi-sdlc:implementation-fix yv-12'
+        -Branch fix/yv-12-fill-gaps-error -Prompt '/yi-sdlc:implement-fix yv-12'
     .\rider-tab.ps1 -Main C:\Projects\Pet\yavias -Id yv-12 -Remove
 #>
 [CmdletBinding()]
@@ -36,7 +37,7 @@ param(
     [string]$Title,
     # Exported as YI_SDLC_BRANCH, so the tab session uses the branch the launcher chose.
     [string]$Branch,
-    # What Claude starts with, e.g. '/yi-sdlc:implementation-fix yv-12'.
+    # What Claude starts with, e.g. '/yi-sdlc:implement-fix yv-12'.
     [string]$Prompt,
     # PowerShell run in the tab before Claude starts (profile § Launcher).
     [string]$Setup,

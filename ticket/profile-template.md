@@ -1,7 +1,7 @@
 # Project profile for the yi-sdlc ticket skills
 
-Copy this file to `.claude/yi-sdlc/project.md` in a repo to run `/yi-sdlc:implementation-fix`,
-`/yi-sdlc:implementation-change` and `/yi-sdlc:implementation-feature` there, and fill in every section. The skills, `workflow.md` and the files next to
+Copy this file to `.claude/yi-sdlc/project.md` in a repo to run `/yi-sdlc:implement-fix`,
+`/yi-sdlc:implement-change` and `/yi-sdlc:implement-feature` there, and fill in every section. The skills, `workflow.md` and the files next to
 it point into it as "profile § <section>", so keep the headings. Write facts the skills can act on
 (commands, paths, ports, names), not advice.
 
@@ -159,9 +159,9 @@ accounts, granting an agent a new operation>.
 
 ## Change scope
 
-- A change graduates to `/yi-sdlc:implementation-feature` when it needs <a new module / capability folder, …>.
+- A change graduates to `/yi-sdlc:implement-feature` when it needs <a new module / capability folder, …>.
 - Part of every change's acceptance criteria: <e.g. whether an AI agent may call a new operation>.
 
 ## Ship
 
-What `/yi-sdlc:implementation-feature` brings in line before its PR, beyond the feature docs: <repo-wide docs>.
+What `/yi-sdlc:implement-feature` brings in line before its PR, beyond the feature docs: <repo-wide docs>.

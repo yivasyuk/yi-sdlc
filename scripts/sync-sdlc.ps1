@@ -13,8 +13,8 @@
 
     sdlc-upstream.json records what was imported (repo, ref, commit, version, skill and agent names). A re-run
     replaces exactly those entries, so skills removed upstream disappear here, and yi-sdlc's own skills
-    (implementation-*, git-commit, notification-mode) are never touched: an upstream name that collides with one stops
-    the sync.
+    (implement-fix, implement-change, implement-feature, complete, git-commit, notification-mode) are never
+    touched: an upstream name that collides with one stops the sync.
 
 .EXAMPLE
     .\scripts\sync-sdlc.ps1                     # the latest upstream main
