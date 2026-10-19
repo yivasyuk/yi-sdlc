@@ -88,6 +88,18 @@ The repo's own script, implementing `environment.md` (the plugin has no environm
 - Outside reach: <live services the isolated app still calls, and what must never happen there (orders,
   real accounts, paid calls)>.
 
+## Run
+
+Optional: for `/yi-sdlc:run-application`, which starts the app from any checkout (the main clone or a worktree)
+on ports of its own and answers with the links. Its interface: the plugin's `skills/run-application/run-script.md`.
+
+- Script: `.claude/yi-sdlc/run-app.ps1`, with `up`, `status`, `restart`, `down` and `list`.
+- Parts: <e.g. `db` (shared, `docker compose up -d db`, :5433), `api` (`dotnet run`, :5080 in the main
+  clone), `web` (Vite, :5173, proxies `/api` to its own checkout's `api` through `<VAR>`)>.
+- Links: <name → URL, e.g. Web `/`, API docs `/swagger`>.
+- What the checkouts share, and what must never happen from a worktree: <e.g. the dev database; the Api
+  applies no migrations in a worktree>.
+
 ## Launcher
 
 Optional: without this section, each ticket tries its own Rider tab and falls back to the invoking session
