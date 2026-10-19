@@ -10,6 +10,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
 | Skills `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change`, `/yi-sdlc:impl-feature` | `skills/impl-*`, `ticket/` | Take a tracker ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. See [The ticket kit](#the-ticket-kit). |
+| Skill `/yi-sdlc:run-application` | `skills/run-application` | Starts the app (backend, frontend, the rest) from the main clone or any worktree, each on its own ports so parallel sessions run side by side, and answers with checked links. Drives the repo's `.claude/yi-sdlc/run-app.ps1` (`up`, `status`, `restart`, `down`, `list`; the interface: `run-script.md`), and writes one from the bundled template when the repo has none. |
 | Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
@@ -54,6 +55,7 @@ Everything generic about ticket work lives in `ticket/`; what is particular to a
 |---|---|
 | `project.md` | The profile: the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, the launcher, live checks, test levels, gates, docs to keep in sync |
 | `ticket-env.ps1` | The repo's own isolated environment |
+| `run-app.ps1` | Optional: how `/yi-sdlc:run-application` starts the app from any checkout |
 
 The repo also registers its tracker's MCP server in `.mcp.json`.
 
