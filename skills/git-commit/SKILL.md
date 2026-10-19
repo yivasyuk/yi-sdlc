@@ -23,9 +23,9 @@ its conventions file (`AGENTS.md` or `CLAUDE.md`) wins over this skill where the
   example `survey:` / `scaffold:`).
 - `<details>` says what changed in the present tense, capitalised, one logical change per commit.
 - Work on a tracker ticket uses the ticket ID instead: `<id>: <details>`, on the branch profile § Branches
-  gives the skill (by default `fix/<id>-<slug>` for `/yi-sdlc:implementation-fix`, `change/<id>-<slug>` for
-  `/yi-sdlc:implementation-change`).
-- A feature ticket built with `/yi-sdlc:implementation-feature` goes on its `feature` branch (by default
+  gives the skill (by default `fix/<id>-<slug>` for `/yi-sdlc:implement-fix`, `change/<id>-<slug>` for
+  `/yi-sdlc:implement-change`).
+- A feature ticket built with `/yi-sdlc:implement-feature` goes on its `feature` branch (by default
   `feature/<id>-<feature-name>`) and keeps the `<feature-name>:` prefix; an unnamed one goes on its
   `feature-unnamed` branch (by default `feature/<id>`) and uses the ticket ID.
 

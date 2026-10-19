@@ -1,7 +1,7 @@
 # Tracker contract (shared by the ticket skills)
 
-The ticket skills (`/yi-sdlc:implementation-fix`, `/yi-sdlc:implementation-change`,
-`/yi-sdlc:implementation-feature`) never talk to a particular tracker. They work against the abstract tracker below: **roles** for the board's columns, the
+The ticket skills (`/yi-sdlc:implement-fix`, `/yi-sdlc:implement-change`,
+`/yi-sdlc:implement-feature`) never talk to a particular tracker. They work against the abstract tracker below: **roles** for the board's columns, the
 **`sdlc-mode`** of a ticket, one **label**, and a handful of **operations**. The plugin ships an adapter
 per tracker that carries out the operations through its MCP server:
 
@@ -58,7 +58,7 @@ names:
 
 | Move | When |
 |---|---|
-| → `in-progress` | The skill starts the work (after the ownership and workability checks; `/yi-sdlc:implementation-change` after its size check), also out of `blocked` on a re-run |
+| → `in-progress` | The skill starts the work (after the ownership and workability checks; `/yi-sdlc:implement-change` after its size check), also out of `blocked` on a re-run |
 | → `blocked` | Workflow § Blocked exit, from any column before the hand-off column |
 | `in-progress` → `in-review` | The PR is open and its checks are green. No `in-review` column: no move |
 | → `test` or `merged` | Merged (`test` when labelled `manual-qa` and the board has one) |

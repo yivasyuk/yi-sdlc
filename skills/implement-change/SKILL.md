@@ -1,5 +1,5 @@
 ---
-name: implementation-change
+name: implement-change
 description: >-
   Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
   tracker the repo's profile maps) end to end by its ID in an isolated environment (its own worktree, in a
@@ -9,8 +9,8 @@ description: >-
   ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
   sets the autonomy: auto (self-approves the ACs and merges, stops only on critical issues), semi-auto
   (asks at both stops) or developer, the default (briefs the operator and works with them interactively).
-  Defects go to /yi-sdlc:implementation-fix; work too big for one PR goes to
-  /yi-sdlc:implementation-feature (the full SDLC pipeline). Needs the repo's .claude/yi-sdlc/project.md.
+  Defects go to /yi-sdlc:implement-fix; work too big for one PR goes to
+  /yi-sdlc:implement-feature (the full SDLC pipeline). Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [--here]
 model: opus
@@ -25,7 +25,7 @@ planned stops:
 1. **After writing the acceptance criteria, before any code.** In a fix, the docs already say what is
    correct. In a change, you are proposing what correct *becomes*, and that is the operator's call. A
    well-built version of the wrong enhancement costs more than a short wait.
-2. **Before merging**, as in `/yi-sdlc:implementation-fix`.
+2. **Before merging**, as in `/yi-sdlc:implement-fix`.
 
 There is one more stop at the very start if they didn't give an issue ID (step 0). Every other decision
 is yours, made from the ticket, the repo docs and its conventions file.
@@ -37,13 +37,13 @@ turns the run into a brief plus an interactive session.
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
 and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
-with `/yi-sdlc:implementation-fix`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
+with `/yi-sdlc:implement-fix`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
 gates, commits, review, PR, merge, ticket comments and the Blocked exit. The profile holds what is
 particular to this repo. The steps below point into them as "workflow § <section>" and "profile
 § <section>".
 
-This skill sits between two other routes. `/yi-sdlc:implementation-fix` handles defects.
-`/yi-sdlc:implementation-feature` runs the full SDLC pipeline (`yi-sdlc:interview`, `yi-sdlc:write-prd`…) for
+This skill sits between two other routes. `/yi-sdlc:implement-fix` handles defects.
+`/yi-sdlc:implement-feature` runs the full SDLC pipeline (`yi-sdlc:interview`, `yi-sdlc:write-prd`…) for
 new features. This skill handles changes to an existing feature that fit one PR. Step 2 is where a ticket that has outgrown it leaves.
 
 ## 0. Get the issue ID
@@ -58,7 +58,7 @@ normalized ID.
    operator's answers are there.
 2. Check the column (workflow § Tracker).
 3. Check that this is a change (workflow § Which skill owns a ticket). If it only asks to restore behaviour
-   the docs already promise, stop and tell the operator to run `/yi-sdlc:implementation-fix <id>` instead.
+   the docs already promise, stop and tell the operator to run `/yi-sdlc:implement-fix <id>` instead.
 4. Read the `sdlc-mode` (workflow § SDLC mode). In `developer`, do the reads in sub-step 6 and the
    split in sub-step 7, then follow workflow § Developer mode instead of sub-step 8 and the steps after
    them; the items and the step 2 size check belong in the brief. In `auto`, a question that would block or
@@ -95,7 +95,7 @@ The change **graduates** to the full SDLC pipeline if any of these hold:
 - It is more than about two days of work, or would need more than one PR to land safely.
 
 If it graduates, take the Blocked exit before bringing up the environment. Question 1 is "Run it through the
-full pipeline as feature `<suggested-slug>` (`/yi-sdlc:implementation-feature <id>`)?", with which criterion tripped
+full pipeline as feature `<suggested-slug>` (`/yi-sdlc:implement-feature <id>`)?", with which criterion tripped
 and why. If only some items are too big, offer the split instead: "Implement items 1–3 here and file item 4
 as its own feature?" A borderline case is the same kind of question. This exit applies in `auto` too: how
 much of the ticket to build is the operator's scope call, not a guess.
@@ -120,7 +120,7 @@ upgrade), say what you checked instead.
 
 ## 5. Write the change as acceptance criteria
 
-Edit the owning PRD in the worktree. The PRD is what "correct" will mean for the next `/yi-sdlc:implementation-fix`, so
+Edit the owning PRD in the worktree. The PRD is what "correct" will mean for the next `/yi-sdlc:implement-fix`, so
 the change has to land there, not only in code.
 
 - **New behaviour → new ACs** in §5, numbered after the last one and tagged with the ticket:

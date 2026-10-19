@@ -1,5 +1,5 @@
 ---
-name: implementation-feature
+name: implement-feature
 description: >-
   Build a feature ticket (YouTrack, Jira, or any tracker the repo's profile maps) through the whole SDLC
   pipeline in an isolated environment (its own worktree, in a Rider terminal tab named after it, or in this
@@ -9,7 +9,7 @@ description: >-
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
   easy (default), medium or hard. Stops at three gates (PRD, architecture, plan) and before merging;
   resumable, so re-running it picks up at the next unfinished stage. For new features and changes too big for
-  one PR; defects go to /yi-sdlc:implementation-fix, one-PR changes to /yi-sdlc:implementation-change.
+  one PR; defects go to /yi-sdlc:implement-fix, one-PR changes to /yi-sdlc:implement-change.
   Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [easy|medium|hard] [--here]
@@ -20,8 +20,8 @@ effort: xhigh
 # Implement a feature ticket
 
 Take one feature ticket from the board to a merged PR by running the full `yi-sdlc:*` pipeline, stage by
-stage, inside the same isolated environment `/yi-sdlc:implementation-fix` and
-`/yi-sdlc:implementation-change` use. The stages do the product and design work and ask the operator their
+stage, inside the same isolated environment `/yi-sdlc:implement-fix` and
+`/yi-sdlc:implement-change` use. The stages do the product and design work and ask the operator their
 own questions; this skill picks the stages, feeds them the ticket, keeps them in the worktree, and wraps them in the ticket workflow (board moves, comments,
 PR, merge).
 
@@ -41,7 +41,7 @@ including the `developer` default. If the ticket sets a mode, say so in one line
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
 and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
-with `/yi-sdlc:implementation-fix` and `/yi-sdlc:implementation-change`: the tracker, branches, the isolated
+with `/yi-sdlc:implement-fix` and `/yi-sdlc:implement-change`: the tracker, branches, the isolated
 environment, gates, PR, merge, ticket comments and the Blocked exit. The profile holds what is particular to this repo. The
 steps below point into them as "workflow § <section>" and "profile § <section>". Workflow § SDLC mode and
 § Developer mode don't apply here.
@@ -69,12 +69,12 @@ command, so every stage gets `--depth=<depth>` and doesn't ask for the level aga
    and the **Feature pipeline** comment (step 5) are there.
 2. Check the column (workflow § Tracker).
 3. Check who owns it (workflow § Which skill owns a ticket):
-   - A defect → stop and tell the operator to run `/yi-sdlc:implementation-fix <id>`.
-   - A change to an existing feature that clearly fits one PR (none of the `/yi-sdlc:implementation-change`
+   - A defect → stop and tell the operator to run `/yi-sdlc:implement-fix <id>`.
+   - A change to an existing feature that clearly fits one PR (none of the `/yi-sdlc:implement-change`
      step 2 graduation criteria holds) → say so and ask **"This looks like one PR. Run
-     `/yi-sdlc:implementation-change <id>` instead, or go through the full pipeline anyway?"** The full pipeline isn't wrong for it, only heavier,
+     `/yi-sdlc:implement-change <id>` instead, or go through the full pipeline anyway?"** The full pipeline isn't wrong for it, only heavier,
      and the operator may want the PRD and SAD. The tab session doesn't ask again: the launcher did.
-   - A ticket `/yi-sdlc:implementation-change` graduated (its Blocked comment proposed a slug) is a feature:
+   - A ticket `/yi-sdlc:implement-change` graduated (its Blocked comment proposed a slug) is a feature:
      offer that slug first in step 2.
 4. Read enough to know where the feature lands: the roadmap, the architecture map and the product brief
    (profile § Docs), and the neighbouring `docs/features/<slug>/` folders it touches. The stages read these
@@ -98,7 +98,7 @@ patterns; profile § Branches `feature` and `feature-unnamed` may differ):
 | `<branch>` | `feature`: `feature/<id>-strategy-configurator` | `feature-unnamed`: `feature/<id>` |
 
 A named feature keeps the feature convention (`/yi-sdlc:git-commit`), so its history reads like the
-features before it; without a name it is ticket work and uses the ticket ID, as `/yi-sdlc:implementation-fix` does.
+features before it; without a name it is ticket work and uses the ticket ID, as `/yi-sdlc:implement-fix` does.
 
 On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again. In the tab
 session (`launcher.md` § In the tab session), the launcher already asked: `<branch>` is
@@ -106,7 +106,7 @@ session (`launcher.md` § In the tab session), the launcher already asked: `<bra
 matches `feature-unnamed`).
 
 Then `launcher.md`: open the feature in its own tab, titled `<slug>`, and end, or carry on here when it
-says so or the tab can't open. Pass `<depth>` on in the prompt (`/yi-sdlc:implementation-feature <id> <depth>`), so
+says so or the tab can't open. Pass `<depth>` on in the prompt (`/yi-sdlc:implement-feature <id> <depth>`), so
 the tab session doesn't ask for it.
 
 ## 3. Bring up the environment and enter it
@@ -143,10 +143,10 @@ except at the three gates (step 6).
   next stage is yours to start, so don't stop there: print the block's *What I did* and *Review before
   continuing* lines (they're the operator's per-stage checklist) and continue. Auto-compaction handles the
   length. If the context gets heavy anyway, the operator can `/clear` at any stage boundary and re-run
-  `/yi-sdlc:implementation-feature <id> <depth>`; the skill resumes (below).
+  `/yi-sdlc:implement-feature <id> <depth>`; the skill resumes (below).
 - **Pass `--depth=<depth>`** to every stage that takes it. `yi-sdlc:interview` opens with a mandatory depth
   question of its own: tell it in the args that the operator already chose `<depth>` via
-  `/yi-sdlc:implementation-feature`, and give that as the answer if it still asks.
+  `/yi-sdlc:implement-feature`, and give that as the answer if it still asks.
 - **Brief the interview with the ticket**: title, description, comments, links and attachments as the raw
   idea and prior notes. The ticket is the operator's own words; the interview still asks its checkpoint
   questions, but starts from them instead of from nothing.
