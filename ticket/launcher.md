@@ -30,9 +30,9 @@ Otherwise try the tab (§ Rider tab). Every step there names its fallback.
 Needs the `rider` MCP server, the main clone open in Rider, and PowerShell as Rider's terminal shell
 (Settings → Tools → Terminal → Shell path).
 
-1. Decide `<branch>` now, from profile § Branches (for `/yi-sdlc:impl-feature`, after its name step). On a
+1. Decide `<branch>` now, from profile § Branches (for `/yi-sdlc:implementation-feature`, after its name step). On a
    re-run the ticket already has one (`git branch --list` with the kind's pattern, `{slug}` as `*`): reuse
-   it. The tab title is the feature's `<slug>` for `/yi-sdlc:impl-feature`, and `<branch>` for the other
+   it. The tab title is the feature's `<slug>` for `/yi-sdlc:implementation-feature`, and `<branch>` for the other
    two.
 2. `ticket-env.ps1 up -Issue <id> -Branch <branch>`: the tab starts in the worktree, so it must exist
    first. Keep the printed `worktree`. If `up` fails, that is the environment failing, not the launch:
