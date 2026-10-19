@@ -1,4 +1,4 @@
-# Ticket workflow (shared by `/yi-sdlc:impl-fix`, `/yi-sdlc:impl-change` and `/yi-sdlc:impl-feature`)
+# Ticket workflow (shared by `/yi-sdlc:implementation-fix`, `/yi-sdlc:implementation-change` and `/yi-sdlc:implementation-feature`)
 
 These skills take one tracker ticket from the board to a merged PR, working in an isolated environment. They
 differ in the first half: a fix restores behaviour the docs already promise, a change decides new behaviour
@@ -52,14 +52,15 @@ operators file things loosely.
 
 | The ticket asks to… | Skill | Usual `type` |
 |---|---|---|
-| Restore behaviour that the docs (PRD ACs, `design-spec.md`, ADRs) or plain sense already promise: an error, a wrong value, a crash, a broken flow | `/yi-sdlc:impl-fix` | `fix` |
-| Add behaviour or change what the docs promise, or do a chore with a checkable result (a refactor, an upgrade) | `/yi-sdlc:impl-change` | `change` |
-| A new feature, or a change too big for one PR (`/yi-sdlc:impl-change` step 2 graduates it) | `/yi-sdlc:impl-feature` | `feature` |
+| Restore behaviour that the docs (PRD ACs, `design-spec.md`, ADRs) or plain sense already promise: an error, a wrong value, a crash, a broken flow | `/yi-sdlc:implementation-fix` | `fix` |
+| Add behaviour or change what the docs promise, or do a chore with a checkable result (a refactor, an upgrade) | `/yi-sdlc:implementation-change` | `change` |
+| A new feature, or a change too big for one PR (`/yi-sdlc:implementation-change` step 2 graduates it) | `/yi-sdlc:implementation-feature` | `feature` |
 
 - Behaviour that **no doc covers** is a change: deciding what is correct there is a product decision.
-- A **mixed ticket** ("fix X and add Y") belongs to `/yi-sdlc:impl-change`, which treats the fix as one more AC.
+- A **mixed ticket** ("fix X and add Y") belongs to `/yi-sdlc:implementation-change`, which treats the fix as
+  one more AC.
 - When the skill you are in doesn't own the ticket, stop before touching the tracker, git or the environment, and
-  tell the operator which command to run instead (`/yi-sdlc:impl-change <id>`). Don't switch skills yourself:
+  tell the operator which command to run instead (`/yi-sdlc:implementation-change <id>`). Don't switch skills yourself:
   the operator picked this one, and they may know something the ticket doesn't say.
 
 ## Tracker
@@ -151,16 +152,16 @@ when they choose a different route.
 ## Branches
 
 Branch names come from profile § Branches: one pattern per kind, with `{id}` (the normalized ticket ID) and
-`{slug}` (a short kebab-case summary; for `/yi-sdlc:impl-feature`, the feature's slug), and the `base`
+`{slug}` (a short kebab-case summary; for `/yi-sdlc:implementation-feature`, the feature's slug), and the `base`
 branch every branch starts from and every PR targets. A profile without the section gets the defaults
 below, and your first message says so.
 
 | Kind | Used by | Default pattern |
 |---|---|---|
-| `fix` | `/yi-sdlc:impl-fix` | `fix/{id}-{slug}` |
-| `change` | `/yi-sdlc:impl-change` | `change/{id}-{slug}` |
-| `feature` | `/yi-sdlc:impl-feature`, named feature | `feature/{id}-{slug}` |
-| `feature-unnamed` | `/yi-sdlc:impl-feature`, no name | `feature/{id}` |
+| `fix` | `/yi-sdlc:implementation-fix` | `fix/{id}-{slug}` |
+| `change` | `/yi-sdlc:implementation-change` | `change/{id}-{slug}` |
+| `feature` | `/yi-sdlc:implementation-feature`, named feature | `feature/{id}-{slug}` |
+| `feature-unnamed` | `/yi-sdlc:implementation-feature`, no name | `feature/{id}` |
 | `base` | every PR | `main` |
 
 On a re-run the ticket already has a branch: look for it with the kind's pattern, `{slug}` as `*`
@@ -217,7 +218,7 @@ of `PRD.md` (same §1/§5 layout), and its changelog may be `changelog.md`. Upda
 
 | The change touches… | Update |
 |---|---|
-| Behaviour: new, changed or withdrawn ACs | `PRD.md` / `spec.md` §5, plus a §1 decision override for a changed AC (`/yi-sdlc:impl-change` step 5) |
+| Behaviour: new, changed or withdrawn ACs | `PRD.md` / `spec.md` §5, plus a §1 decision override for a changed AC (`/yi-sdlc:implementation-change` step 5) |
 | The tests of an AC | `test-plan.md`: a row per new AC, edited rows for changed ACs, withdrawn rows marked as such |
 | A screen | `design-spec.md` |
 | A flow: who calls whom, an error branch, a button or step in it | `sad.md` §6: the sequence diagram and the AC → flow trace table; the C4 relations when an actor's action changes |
@@ -226,7 +227,7 @@ of `PRD.md` (same §1/§5 layout), and its changelog may be `changelog.md`. Upda
 | Schema: a table, column, enum value or index | `data-model.md` |
 | An ADR's premise or consequence | one `*Amended by <id> (<date>):* …` line in the ADR. Never rewrite its decision; reversing one is a critical stop, or graduates the change |
 | A bug a doc records as known (PRD §8, a release check's known issues) | annotate it `Fixed by <id>` where it is recorded |
-| Anything an operator upgrading would notice | the feature changelog (`/yi-sdlc:impl-change` step 12; a fix adds a line only when it is visible or has an operational note) |
+| Anything an operator upgrading would notice | the feature changelog (`/yi-sdlc:implementation-change` step 12; a fix adds a line only when it is visible or has an operational note) |
 | Anything in profile § Docs sync | what it says (the repo's own docs: conventions, gotchas, architecture map, design system, generated contracts) |
 
 Leave dated records as they are: `_review/`, `_verification/`, `_audit/`, `tasks/`, `pr-body.md`,

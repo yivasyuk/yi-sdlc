@@ -1,5 +1,5 @@
 ---
-name: impl-fix
+name: implementation-fix
 description: >-
   Fix a defect ticket (YouTrack, Jira, or any tracker the repo's profile maps) end to end by its ID in an
   isolated environment (its own worktree, in a Rider terminal tab named after it, or in this session when
@@ -8,7 +8,7 @@ description: >-
   approves. The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
   without asking, stops only on critical issues), semi-auto (asks before merging) or developer, the
   default (briefs the operator and works with them interactively). For a defect only: behaviour the docs
-  already promise. New or changed behaviour goes to /yi-sdlc:impl-change. Needs the repo's
+  already promise. New or changed behaviour goes to /yi-sdlc:implementation-change. Needs the repo's
   .claude/yi-sdlc/project.md.
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [--here]
@@ -32,7 +32,7 @@ an interactive session.
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
 and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
-with `/yi-sdlc:impl-change`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
+with `/yi-sdlc:implementation-change`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
 gates, commits, review, PR, merge, ticket comments and the Blocked exit. The profile holds what is
 particular to this repo. The steps below point into them as "workflow § <section>" and "profile
 § <section>".
@@ -48,7 +48,7 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
    operator's answers are there.
 2. Check the column (workflow § Tracker).
 3. Check that this is a defect (workflow § Which skill owns a ticket). If the ticket asks for new or changed
-   behaviour, stop and tell the operator to run `/yi-sdlc:impl-change <id>` instead.
+   behaviour, stop and tell the operator to run `/yi-sdlc:implementation-change <id>` instead.
 4. Read the `sdlc-mode` (workflow § SDLC mode). In `developer`, do the reads in sub-step 6, then
    follow workflow § Developer mode instead of sub-steps 7–8 and the steps after them. In `auto`, a question
    that would block from here on is a stop only if it is critical (workflow § Critical stops in auto);
