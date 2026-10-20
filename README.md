@@ -7,6 +7,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 |---|---|---|
 | Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and All As Recommended for the rest of a session. See the script's header. |
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
+| Hook `SessionStart` | `hooks/language.ps1` | Sets the language every yi-sdlc skill writes in (questions, documents, tracker comments, PRs): `- Language: <name>` in § Language of the repo's `.claude/yi-sdlc/project.md` (the main clone's from a worktree), English by default. It overrides the imported skills' Ukrainian without editing them, so a sync keeps it. |
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
 | Skill `/yi-sdlc:notification-mode` | `skills/notification-mode` | `desktop`, `terminal`, `toggle` or `status`: where Claude's questions are asked. |
 | Skills `/yi-sdlc:implement-fix`, `/yi-sdlc:implement-change`, `/yi-sdlc:implement-feature` | `skills/implement-{fix,change,feature}`, `ticket/` | Take a tracker ticket (defect, one-PR change, or feature through the full `yi-sdlc:*` pipeline) to a merged PR in an isolated environment. See [The ticket kit](#the-ticket-kit). |
@@ -54,7 +55,7 @@ Everything generic about ticket work lives in `ticket/`; what is particular to a
 
 | Repo (`.claude/yi-sdlc/`) | What it holds |
 |---|---|
-| `project.md` | The profile: the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, the launcher, live checks, test levels, gates, docs to keep in sync |
+| `project.md` | The profile: the language the skills write in (default English), the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, the launcher, live checks, test levels, gates, docs to keep in sync |
 | `ticket-env.ps1` | The repo's own isolated environment |
 | `run-app.ps1` | Optional: how `/yi-sdlc:run-application` starts the app from any checkout |
 

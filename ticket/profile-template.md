@@ -9,6 +9,15 @@ The plugin holds everything tracker- and IDE-generic (the tracker contract and i
 adapters, the workflow, the launcher). This file holds only what is particular to the repo, and the
 environment script next to it is the repo's own.
 
+## Language
+
+Optional: the language every yi-sdlc skill writes in, the imported pipeline skills included: questions,
+documents (PRD, SAD, ADRs, tasks, reviews), tracker comments, PR titles and bodies. Code, identifiers and
+commands stay as they are. Leave the section out for English. The plugin's `hooks/language.ps1` reads it at the
+start of each session, so a change takes effect in the next one.
+
+- Language: English
+
 ## Tracker
 
 Maps the repo's tracker onto `tracker/contract.md`. The adapter (`youtrack` or `jira`) says how each
