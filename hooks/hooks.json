@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/hooks/language.ps1\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "AskUserQuestion",
