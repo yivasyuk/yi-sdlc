@@ -15,7 +15,7 @@
 #                       mentions are links under it; a click shows that section beside the window.
 # State (notification-mode, all-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
-# -Mode desktop|terminal|toggle|status manages the notification mode from a shell (/yi-sdlc:notification-mode).
+# -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
 # -Auto submit|close builds the window without showing it (for testing); env ASK_DIALOG_TRANSLATE=uk|en
 # translates first, ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an
 # image and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also
@@ -182,7 +182,7 @@ namespace ClaudeHook {
             Missing = 'Answer every question ({0} left)'; Translating = 'Translating...'; Failed = 'Translation failed'
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
-            TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with /yi-sdlc:notification-mode desktop.'
+            TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with notification-mode desktop in any terminal.'
             AllRecommended = 'All As Recommended'
             AllRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
             LanguageName = 'English'
@@ -195,7 +195,7 @@ namespace ClaudeHook {
             Missing = 'Дайте відповідь на всі питання (залишилось {0})'; Translating = 'Перекладаю...'; Failed = 'Не вдалося перекласти'
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
-            TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: /yi-sdlc:notification-mode desktop.'
+            TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: notification-mode desktop у будь-якому терміналі.'
             AllRecommended = 'Усі як рекомендовано'
             AllRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
             LanguageName = 'Українська'
