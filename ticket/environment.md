@@ -10,7 +10,7 @@ interface the plugin relies on, and nothing more. The plugin has no environment 
 
 A PowerShell script in the repo (by convention `.claude/yi-sdlc/ticket-env.ps1`), run from the main clone
 with the PowerShell tool, **always by its absolute path in the main clone**: `<main>` below is
-`git rev-parse --show-toplevel` there, or `$env:YI_SDLC_MAIN` in a tab session (launcher.md). The worktree
+`git rev-parse --show-toplevel` there. The worktree
 has its own copy of the script, which would resolve its paths from the worktree and build the wrong
 environment. The workflow and skills write it as `ticket-env.ps1`, meaning that absolute path.
 
@@ -33,13 +33,11 @@ The workflow and skills call those only where the profile refers to them, typica
 - Data the environment copies is a snapshot from `up`. Migrations, loads and deletes land in the copy only.
 - Profile § Environment lists what the isolated app still reaches outside itself (live services, paid
   APIs) and what must never happen there.
-- `launcher.md` § In the tab session changes one thing: a tab session can't remove its own worktree, so it
-  runs `down` with `-KeepWorktree` and leaves the removal to the tab.
 
 ## Writing one
 
 Start from the repo's dev setup: what the operator runs locally, which ports and data it uses. The script
 should never reuse any of it. Free ports (ask the OS for them), a copy of the data rather than the data, a
 worktree next to the main clone rather than inside it, and the state (ports, PIDs) in a file outside the
-worktree so `status` and `down` find it. Windows PowerShell 5.1 compatible, so it runs from Rider's
+worktree so `status` and `down` find it. Windows PowerShell 5.1 compatible, so it runs from any
 terminal and Claude's PowerShell tool alike.

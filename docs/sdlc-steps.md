@@ -35,8 +35,8 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 ## One-PR change (`implement-change`)
 
 0. Get the issue ID.
-1. Read the ticket: check its column, check it's a change, read its `sdlc-mode`, open it in its own tab, find
-   the feature it belongs to, and split it into items.
+1. Read the ticket: check its column, check it's a change, read its `sdlc-mode`, find the feature it
+   belongs to, and split it into items.
 2. Check it fits one PR. If it doesn't, it moves to the full pipeline.
 3. Bring up the isolated environment.
 4. Record how each item behaves today.
