@@ -199,11 +199,16 @@ brings up `ticket-env.ps1` around that worktree; the note only passes on what th
 
    ```
    runpane panels create --pane <pane id> --title gates --source agent --no-focus --yes --json
-     --tool-command "powershell -NoProfile -ExecutionPolicy Bypass -File <skill dir>\scripts\gate-driver.ps1 -Pane <pane id> -Panel <panel id> -Prompt <prompt file>"
+     --tool-command "powershell -NoProfile -ExecutionPolicy Bypass -File <skill dir>/scripts/gate-driver.ps1 -Pane <pane id> -Panel <panel id> -Prompt <prompt file>"
    ```
 
    `<skill dir>` here is the absolute path, with `${CLAUDE_PLUGIN_ROOT}` already expanded (e.g.
-   `C:\Projects\Pet\yi-sdlc\skills\process-tickets`): the tab's shell doesn't know the variable.
+   `C:/Projects/Pet/yi-sdlc/skills/process-tickets`): the tab's shell doesn't know the variable. **Write both
+   paths with forward slashes.** Pane types the command into the Pane's own shell, which can be Git Bash,
+   and bash eats backslashes: `C:\Projects\Pet\…` arrives as `C:ProjectsPet…` and the driver never
+   starts. Then check the tab once with `mcp__pane__agents_status` on its panel: its screen should say
+   `Watching panel <panel id> for approved gates`. Anything else (a "does not exist" error, a bare
+   prompt) means no driver is running, and the session will stop at gate 1 with nobody to clear it.
 
    After each gate the operator approves, the session reports it and ends its turn; the driver then sends
    it `/clear` and the prompt file again, so every stretch between gates starts with a fresh context and

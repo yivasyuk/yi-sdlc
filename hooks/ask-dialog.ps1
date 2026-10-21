@@ -1,14 +1,20 @@
-﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '')
+﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '', [switch]$Serve, [string]$Pipe = '')
 
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
+#   One window        - every session's questions share one window, a tab per question call titled
+#                       project and feature (else the branch), each cut at its width; a tab not opened yet
+#                       has an amber line on top. Its buttons and captions speak its questions' language.
+#                       The hook hands its call over a named pipe to the window process (-Serve, started on
+#                       demand outside the hook's process tree, gone 5 minutes after its last tab) and waits.
 #   Submit            - the selected answers; recommended ones are preselected, else a single choice's
 #                       first option (a multiple choice starts empty) (Enter)
-#   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc)
+#   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc). Only the
+#                       shown tab; the window's own close button closes every tab.
 #   Keep Recommended  - ticked on Submit, the session's later questions get their recommended options
 #                       without a window (marks in keep-recommended\<session id>, swept after 7 days).
-#   UA / GB flags     - translate the window in place (Ukrainian / English) via headless `claude -p`;
-#                       answers are always sent with the original question and option texts.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
+#                       Double-click a word and keep the button down: its Ukrainian translation (headless
+#                       `claude -p`, Haiku) shows beside the pointer.
 #   Message field     - optional free text for Claude; Ctrl+V pastes clipboard images (saved as PNG,
 #                       passed as [Image #n] file paths). Sent as additionalContext with Submit/Close.
 #   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4) a question
@@ -16,10 +22,11 @@
 # State (notification-mode, keep-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
-# -Auto submit|close builds the window without showing it (for testing); env ASK_DIALOG_TRANSLATE=uk|en
-# translates first, ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an
-# image and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also
-# the reference window as <png>-ref.png).
+# -Auto submit|close builds the window in this process without showing it (for testing); env
+# ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
+# ASK_DIALOG_WORD=<word> translates that word of the first question as if held after a double-click, ASK_DIALOG_MORE=<payload.json>;... adds more tabs (not opened)
+# and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also the
+# reference window as <png>-ref.png). The window process logs its failures to ask-dialog.log in the data dir.
 # Keep this file UTF-8 with BOM: Windows PowerShell needs the BOM to read the Ukrainian strings.
 
 $ErrorActionPreference = 'Stop'
@@ -73,7 +80,7 @@ function Get-Recommended($q) {
     return ,$rec
 }
 
-function Write-Answers($toolInput, $answers, [string]$reason, [string]$context) {
+function Get-AnswersOutput($toolInput, $answers, [string]$reason, [string]$context) {
     $toolInput | Add-Member -NotePropertyName answers -NotePropertyValue ([pscustomobject]$answers) -Force
     $result = @{
         hookSpecificOutput = @{
@@ -84,60 +91,144 @@ function Write-Answers($toolInput, $answers, [string]$reason, [string]$context) 
         }
     }
     if ($context) { $result.hookSpecificOutput.additionalContext = $context }
-    [Console]::Out.Write((ConvertTo-Json -InputObject $result -Depth 20 -Compress))
+    ConvertTo-Json -InputObject $result -Depth 20 -Compress
 }
 
-try {
-    $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    $toolInput = $payload.tool_input
-    $questions = @($toolInput.questions)
-    if ($questions.Count -eq 0) { exit 0 }
+function Write-Log([string]$text) {
+    try { Add-Content -LiteralPath (Join-Path $dataDir 'ask-dialog.log') -Value ('{0:s} {1}' -f (Get-Date), $text) -Encoding UTF8 } catch {}
+}
 
-    # PS 5.1 otherwise serializes some arrays as {"value":[...],"Count":n}.
-    Remove-TypeData -TypeName System.Array -ErrorAction SilentlyContinue
+# The window process's pipe (and its lock) are per user and per version of this script, so an updated
+# plugin never hands its questions to an older window.
+$scriptId = "$PSCommandPath|$((Get-Item -LiteralPath $PSCommandPath).LastWriteTimeUtc.Ticks)"
+$sha = [Security.Cryptography.SHA1]::Create()
+$pipeName = 'yi-sdlc-ask-dialog-' + $env:USERNAME + '-' +
+    (-join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($scriptId)) | Select-Object -First 6 | ForEach-Object { $_.ToString('x2') }))
+if ($Pipe) { $pipeName = $Pipe }
 
-    # Keep Recommended was ticked earlier in this session: answer without asking, in either mode.
-    $mark = Get-KeepRecommendedMark $payload.session_id
-    if ($mark -and (Test-Path -LiteralPath $mark)) {
-        $answers = [ordered]@{}
-        foreach ($q in $questions) {
-            $rec = Get-Recommended $q
-            if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
+function Start-Window {
+    $dir = $dataDir.TrimEnd('\')
+    $arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File ""$PSCommandPath"" -Serve -Pipe $pipeName -DataDir ""$dir"""
+    # Through WMI, so the window is no child of this hook: Claude Code may end the hook's process tree
+    # (or job) when its question is cancelled, and the window holds other sessions' questions too.
+    # Hidden, so its console never flashes (Windows applies that to the dialog's first showing too;
+    # Add-RequestTab shows it again). Detached, powershell.exe does not start at all.
+    try {
+        $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+        $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine = "powershell.exe $arguments"; ProcessStartupInformation = $startup }
+        if ($r.ReturnValue -ne 0) { throw "Win32_Process.Create returned $($r.ReturnValue)" }
+    } catch {
+        Start-Process -FilePath powershell.exe -ArgumentList $arguments -WindowStyle Hidden
+    }
+}
+
+# Sends the hook's payload to the window (starting it when there is none) and returns the hook output
+# for its tab: one base64 line each way, the reply as "OK <base64>". A window that drops the call
+# (closing for idleness, or failed) gets the call again from a new window, twice at most.
+function Send-ToWindow([string]$payloadJson) {
+    $request = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payloadJson))
+    $started = $false
+    $tries = 0
+    $deadline = (Get-Date).AddSeconds(60)
+    while ($tries -lt 3 -and (Get-Date) -lt $deadline) {
+        $pipe = New-Object IO.Pipes.NamedPipeClientStream('.', $pipeName, [IO.Pipes.PipeDirection]::InOut)
+        try {
+            try { $pipe.Connect(250) } catch {
+                if (-not $started) { Start-Window; $started = $true }
+                continue
+            }
+            $tries++
+            $writer = New-Object IO.StreamWriter($pipe, [Text.Encoding]::ASCII)
+            $writer.WriteLine($request)
+            $writer.Flush()
+            $reply = (New-Object IO.StreamReader($pipe, [Text.Encoding]::ASCII)).ReadLine()
+            if ($reply -and $reply.StartsWith('OK ')) { return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply.Substring(3))) }
+            $started = $false
+        } finally { $pipe.Dispose() }
+    }
+    ''
+}
+
+# PS 5.1 otherwise serializes some arrays as {"value":[...],"Count":n}.
+Remove-TypeData -TypeName System.Array -ErrorAction SilentlyContinue
+
+# The hook: answer from Keep Recommended, leave it to the terminal, or hand it to the window.
+if (-not $Serve) {
+    try {
+        $rawPayload = [Console]::In.ReadToEnd()
+        $payload = $rawPayload | ConvertFrom-Json
+        $toolInput = $payload.tool_input
+        $questions = @($toolInput.questions)
+        if ($questions.Count -eq 0) { exit 0 }
+
+        # Keep Recommended was ticked earlier in this session: answer without asking, in either mode.
+        $mark = Get-KeepRecommendedMark $payload.session_id
+        if ($mark -and (Test-Path -LiteralPath $mark)) {
+            $answers = [ordered]@{}
+            foreach ($q in $questions) {
+                $rec = Get-Recommended $q
+                if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
+            }
+            [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
+                'The user ticked Keep Recommended earlier in this session, so these questions were not shown to them: ' +
+                'each was answered with its recommended option (the first option when none is marked; ' +
+                'a multi-select question with none marked is left unanswered).')))
+            exit 0
         }
-        Write-Answers $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
-            'The user ticked Keep Recommended earlier in this session, so these questions were not shown to them: ' +
-            'each was answered with its recommended option (the first option when none is marked; ' +
-            'a multi-select question with none marked is left unanswered).')
+
+        if ((Get-NotificationMode) -eq 'terminal') { exit 0 }
+        if (-not $Auto) {
+            [Console]::Out.Write((Send-ToWindow $rawPayload))
+            exit 0
+        }
+    } catch {
+        # Any failure falls back to the normal terminal prompt.
+        [Console]::Error.WriteLine("ask-dialog: $_")
         exit 0
     }
+}
 
-    if ((Get-NotificationMode) -eq 'terminal') { exit 0 }
+# The window: the window process (-Serve), or with -Auto this process with the one tab.
+try {
+    if ($Serve) {
+        # One window process: a second one waits for a closing one to go, or leaves the calls to it.
+        $lock = New-Object Threading.Mutex($false, "Local\$pipeName")
+        try { if (-not $lock.WaitOne(5000)) { exit 0 } } catch [Threading.AbandonedMutexException] {}
+    }
 
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     Add-Type -Name Native -Namespace ClaudeHook -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
 '@
     # The wheel goes to the control under the pointer, and the read-only texts, radio buttons and group boxes
-    # inside the question list swallow it; this filter scrolls the list instead, wherever the pointer is in it.
-    Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @'
+    # inside the question list swallow it; this filter scrolls the shown tab's list instead, wherever the
+    # pointer is in it.
+    Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing, System.Core -TypeDefinition @'
 using System;
+using System.Collections.Concurrent;
 using System.Drawing;
+using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 namespace ClaudeHook {
     public sealed class WheelRouter : IMessageFilter {
         [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
-        readonly ScrollableControl target;
+        public ScrollableControl Target;
         int pending;
-        public WheelRouter(ScrollableControl target) { this.target = target; }
         public bool PreFilterMessage(ref Message m) {
             if (m.Msg != 0x020A) return false;  // WM_MOUSEWHEEL
             return ScrollAt(Control.MousePosition, (short)((long)m.WParam >> 16));
         }
         public bool ScrollAt(Point screen, int delta) {
-            if (!target.Visible || !target.RectangleToScreen(target.ClientRectangle).Contains(screen)) return false;
+            ScrollableControl target = Target;
+            if (target == null || !target.Visible || !target.RectangleToScreen(target.ClientRectangle).Contains(screen)) return false;
             Control c = Control.FromChildHandle(WindowFromPoint(screen));
             while (c != null && c != target) c = c.Parent;
             if (c == null) return false;
@@ -171,6 +262,82 @@ namespace ClaudeHook {
             } finally { g.ReleaseHdc(hdc); }
         }
     }
+    // One hook call: its payload, and the open pipe its hook waits on. Gone turns true when the hook
+    // goes away (its question was cancelled); the pipe is overlapped, so Reply writes while Serve waits.
+    public sealed class AskRequest {
+        readonly NamedPipeServerStream pipe;
+        int done;
+        public string Payload;
+        public volatile bool Gone;
+        internal AskRequest(NamedPipeServerStream pipe) { this.pipe = pipe; }
+        public void Reply(string output) {
+            if (Interlocked.Exchange(ref done, 1) == 1) return;
+            try {
+                byte[] line = Encoding.ASCII.GetBytes("OK " + Convert.ToBase64String(Encoding.UTF8.GetBytes(output ?? "")) + "\n");
+                pipe.Write(line, 0, line.Length);
+                pipe.Flush();
+                pipe.WaitForPipeDrain();
+            } catch { } finally { pipe.Dispose(); }
+        }
+        // No answer: the hook asks again, of a new window.
+        internal void Drop() {
+            if (Interlocked.Exchange(ref done, 1) == 0) pipe.Dispose();
+        }
+        internal void Serve(AskServer server) {
+            try {
+                var reader = new StreamReader(pipe, Encoding.ASCII);
+                string line = reader.ReadLine();
+                if (line != null) {
+                    Payload = Encoding.UTF8.GetString(Convert.FromBase64String(line.Trim()));
+                    if (!server.Enqueue(this)) { Drop(); return; }
+                    while (reader.Read() >= 0) { }
+                }
+            } catch { }
+            Gone = true;
+            Drop();
+        }
+    }
+    // The window's end of the pipe: accepts hook calls and queues them for the UI thread to take.
+    public sealed class AskServer {
+        readonly string name;
+        readonly object gate = new object();
+        bool stopped;
+        public readonly ConcurrentQueue<AskRequest> Incoming = new ConcurrentQueue<AskRequest>();
+        public AskServer(string name) { this.name = name; }
+        public void Start() { new Thread(Listen) { IsBackground = true }.Start(); }
+        void Listen() {
+            while (true) {
+                NamedPipeServerStream pipe = null;
+                try {
+                    pipe = new NamedPipeServerStream(name, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    pipe.WaitForConnection();
+                } catch {
+                    if (pipe != null) pipe.Dispose();
+                    lock (gate) { if (stopped) return; }
+                    Thread.Sleep(250);
+                    continue;
+                }
+                lock (gate) { if (stopped) { pipe.Dispose(); return; } }
+                var request = new AskRequest(pipe);
+                ThreadPool.QueueUserWorkItem(_ => request.Serve(this));
+            }
+        }
+        internal bool Enqueue(AskRequest request) {
+            lock (gate) {
+                if (stopped) return false;
+                Incoming.Enqueue(request);
+                return true;
+            }
+        }
+        // Takes no more calls; the ones not taken yet are dropped, so their hooks start a new window.
+        public void Stop() {
+            lock (gate) { stopped = true; }
+            AskRequest request;
+            while (Incoming.TryDequeue(out request)) request.Drop();
+            try { using (var wake = new NamedPipeClientStream(".", name, PipeDirection.InOut)) wake.Connect(500); } catch { }
+        }
+    }
 }
 '@
     [void][ClaudeHook.Native]::SetProcessDPIAware()
@@ -179,91 +346,90 @@ namespace ClaudeHook {
     $ui = @{
         en = @{
             Title = 'Claude Code needs your answer'; Submit = 'Submit'; Close = 'Close'
-            Other = 'Other:'; Project = 'PROJECT'; Branch = 'BRANCH'; Feature = 'FEATURE'
+            Other = 'Other:'; Project = 'Project'; Branch = 'Branch'; Feature = 'Feature'
             Note = 'Additional information for Claude (optional; Ctrl+V pastes images; Ctrl+Enter submits):'
             ImageTip = 'Image #{0} - click to remove'
-            Missing = 'Answer every question ({0} left)'; Translating = 'Translating...'; Failed = 'Translation failed'
+            Missing = 'Answer every question ({0} left)'
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
             KeepRecommended = 'Keep Recommended'
             KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
-            LanguageName = 'English'
         }
         uk = @{
             Title = 'Claude Code чекає на вашу відповідь'; Submit = 'Надіслати'; Close = 'Закрити'
-            Other = 'Інше:'; Project = 'ПРОЄКТ'; Branch = 'ГІЛКА'; Feature = 'ФІЧА'
+            Other = 'Інше:'; Project = 'Проєкт'; Branch = 'Гілка'; Feature = 'Фіча'
             Note = 'Додаткова інформація для Claude (необов''язково; Ctrl+V — вставити зображення; Ctrl+Enter — надіслати):'
             ImageTip = 'Зображення #{0} — клацніть, щоб прибрати'
-            Missing = 'Дайте відповідь на всі питання (залишилось {0})'; Translating = 'Перекладаю...'; Failed = 'Не вдалося перекласти'
+            Missing = 'Дайте відповідь на всі питання (залишилось {0})'
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
             KeepRecommended = 'Залишати рекомендовані'
             KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
-            LanguageName = 'Українська'
         }
     }
-    $allText = ($questions | ForEach-Object { $_.question; $_.header; @($_.options) | ForEach-Object { $_.label; $_.description } }) -join ' '
-    $origLang = if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' }
-    $script:lang = $origLang
-
-    # Title context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
+    # A call's context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
     # feature (docs/features/<slug>) the branch names, else the one it changes: uncommitted changes first,
     # then its commits since the default branch, newest first. No such feature, or a fix/ or change/
-    # branch, no Feature field.
-    $context = [ordered]@{}
-    if ($payload.cwd) {
-        $root = $payload.cwd
-        $project = Split-Path -Leaf $root
-        $branch = ''
-        $changed = @()
-        try {
-            $ErrorActionPreference = 'Continue'  # git writes to stderr outside a repo
-            $repoRoot = git -C $payload.cwd rev-parse --show-toplevel 2>$null
-            if ($LASTEXITCODE -eq 0 -and $repoRoot) {
-                $root = $repoRoot
-                $project = Split-Path -Leaf $root
-                # A worktree's folder is named after its branch; the shared .git sits in the main checkout.
-                $commonDir = git -C $root rev-parse --path-format=absolute --git-common-dir 2>$null
-                if ($LASTEXITCODE -eq 0 -and $commonDir -and (Split-Path -Leaf $commonDir) -eq '.git') {
-                    $project = Split-Path -Leaf (Split-Path -Parent $commonDir)
-                }
-                $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
-                if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $root rev-parse --short HEAD 2>$null) }
+    # branch, no Feature field. Also the repo root and its features, for the references.
+    function Get-QuestionContext([string]$cwd) {
+        $context = [ordered]@{}
+        $root = $null
+        $slugs = @()
+        if ($cwd) {
+            $root = $cwd
+            $project = Split-Path -Leaf $root
+            $branch = ''
+            $changed = @()
+            try {
+                $ErrorActionPreference = 'Continue'  # git writes to stderr outside a repo
+                $repoRoot = git -C $cwd rev-parse --show-toplevel 2>$null
+                if ($LASTEXITCODE -eq 0 -and $repoRoot) {
+                    $root = $repoRoot
+                    $project = Split-Path -Leaf $root
+                    # A worktree's folder is named after its branch; the shared .git sits in the main checkout.
+                    $commonDir = git -C $root rev-parse --path-format=absolute --git-common-dir 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $commonDir -and (Split-Path -Leaf $commonDir) -eq '.git') {
+                        $project = Split-Path -Leaf (Split-Path -Parent $commonDir)
+                    }
+                    $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
+                    if ($branch -eq 'HEAD') { $branch = 'detached ' + (git -C $root rev-parse --short HEAD 2>$null) }
 
-                $changed += @(git -C $root -c core.quotepath=off status --porcelain --untracked-files=all -- docs/features 2>$null |
-                    ForEach-Object { $_.Substring(3) -replace '^.* -> ', '' })
-                $default = git -C $root rev-parse --abbrev-ref origin/HEAD 2>$null
-                if ($LASTEXITCODE -ne 0 -or -not $default) { $default = 'main' }
-                $base = git -C $root merge-base HEAD $default 2>$null
-                if ($LASTEXITCODE -eq 0 -and $base) {
-                    $changed += @(git -C $root -c core.quotepath=off log --format= --name-only "$base..HEAD" -- docs/features 2>$null)
+                    $changed += @(git -C $root -c core.quotepath=off status --porcelain --untracked-files=all -- docs/features 2>$null |
+                        ForEach-Object { $_.Substring(3) -replace '^.* -> ', '' })
+                    $default = git -C $root rev-parse --abbrev-ref origin/HEAD 2>$null
+                    if ($LASTEXITCODE -ne 0 -or -not $default) { $default = 'main' }
+                    $base = git -C $root merge-base HEAD $default 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $base) {
+                        $changed += @(git -C $root -c core.quotepath=off log --format= --name-only "$base..HEAD" -- docs/features 2>$null)
+                    }
                 }
-            }
-        } catch {} finally { $ErrorActionPreference = 'Stop' }
-        $context['Project'] = $project
-        if ($branch) { $context['Branch'] = $branch }
+            } catch {} finally { $ErrorActionPreference = 'Stop' }
+            $context['Project'] = $project
+            if ($branch) { $context['Branch'] = $branch }
 
-        $featuresDir = Join-Path $root 'docs\features'
-        if (Test-Path $featuresDir) {
-            $slugs = @(Get-ChildItem -LiteralPath $featuresDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '_*' })
-            $slugNames = @($slugs | ForEach-Object { $_.Name })
-            # A fix or a change branch works on a ticket, not on a feature.
-            if ($branch -notmatch '^(fix|change)/') {
-                $feature = $slugNames | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_))($|[/_-])" } |
-                    Sort-Object { $_.Length } -Descending | Select-Object -First 1
-                if (-not $feature) {
-                    $feature = $changed | Where-Object { $_ -match '^"?docs/features/([^/]+)/' } |
-                        ForEach-Object { $Matches[1] } | Where-Object { $slugNames -contains $_ } | Select-Object -First 1
+            $featuresDir = Join-Path $root 'docs\features'
+            if (Test-Path $featuresDir) {
+                $slugs = @(Get-ChildItem -LiteralPath $featuresDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '_*' })
+                $slugNames = @($slugs | ForEach-Object { $_.Name })
+                # A fix or a change branch works on a ticket, not on a feature.
+                if ($branch -notmatch '^(fix|change)/') {
+                    $feature = $slugNames | Where-Object { $branch -and $branch -match "(^|[/_-])$([regex]::Escape($_))($|[/_-])" } |
+                        Sort-Object { $_.Length } -Descending | Select-Object -First 1
+                    if (-not $feature) {
+                        $feature = $changed | Where-Object { $_ -match '^"?docs/features/([^/]+)/' } |
+                            ForEach-Object { $Matches[1] } | Where-Object { $slugNames -contains $_ } | Select-Object -First 1
+                    }
+                    if ($feature) { $context['Feature'] = $feature }
                 }
-                if ($feature) { $context['Feature'] = $feature }
             }
         }
+        if ($context.Count -eq 0) { $context['Project'] = '(unknown)' }
+        @{ Context = $context; Root = $root; Slugs = $slugs }
     }
-    if ($context.Count -eq 0) { $context['Project'] = '(unknown)' }
 
     $form = New-Object Windows.Forms.Form
     $form.Font = New-Object Drawing.Font('Segoe UI', 10)
-    $form.StartPosition = 'CenterScreen'
+    $form.StartPosition = 'Manual'  # Add-RequestTab places it
     $form.TopMost = $true
     $form.MinimizeBox = $false
     $form.MaximizeBox = $false
@@ -295,9 +461,93 @@ namespace ClaudeHook {
         if ($t.SelectionLength -eq 0) { return }
         try {
             [Windows.Forms.Clipboard]::SetText((Get-Copied $t.SelectedText))
-            Show-Status $ui[$script:lang].Copied $false
+            Show-Status $ui[$script:current.Lang].Copied $false
         } catch {}
     }
+
+    # Double-click a word and keep the button down: its Ukrainian translation shows beside the pointer, from
+    # a headless `claude -p` given the text around it (cached per word and text). Released sooner, the
+    # double-click only selects and copies, as before.
+    $claudeExe = (Get-Command claude.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if (-not $claudeExe) { $claudeExe = Join-Path $HOME '.local\bin\claude.exe' }
+    $wordTip = New-Object Windows.Forms.ToolTip
+    $script:hold = $null
+    $script:wordCache = @{}
+    $script:wordJobs = New-Object Collections.ArrayList
+    $holdTimer = New-Object Windows.Forms.Timer
+    $holdTimer.Interval = 400
+    $holdTimer.add_Tick({
+        $holdTimer.Stop()
+        $h = $script:hold
+        if ($h -and ([Windows.Forms.Control]::MouseButtons -band [Windows.Forms.MouseButtons]::Left)) { Show-WordTranslation $h }
+    })
+    function Start-WordHold($box, $e) {
+        if ($e.Button -ne 'Left' -or $e.Clicks -lt 2) { return }
+        $script:hold = @{ Box = $box; Fired = $false }
+        $holdTimer.Stop()
+        $holdTimer.Start()
+    }
+    # True when the hold showed a translation, so the release does not also copy.
+    function Stop-WordHold {
+        $holdTimer.Stop()
+        $fired = $script:hold -and $script:hold.Fired
+        $script:hold = $null
+        $fired
+    }
+    function Show-WordTranslation($h) {
+        $box = $h.Box
+        $word = (Get-Copied $box.SelectedText).Trim()
+        if (-not $word -or $word.Length -gt 80 -or $word -notmatch '[A-Za-z]') { return }
+        $h.Fired = $true
+        $at = $box.PointToClient([Windows.Forms.Control]::MousePosition)
+        $at.Offset(0, (& $px 22))
+        $key = "$word|$(Get-Copied $box.Text)"
+        if ($script:wordCache.ContainsKey($key)) { $wordTip.Show("$word → $($script:wordCache[$key])", $box, $at, 15000); return }
+        $wordTip.Show("$word → …", $box, $at, 60000)
+
+        $quote = { param($s) '"' + ($s -replace '"', '\"') + '"' }
+        $system = 'You translate one English word or short phrase into Ukrainian, as it is meant in the given text. ' +
+            'Reply with the translation only: a word or a few, plus one alternative after a comma only when the meaning is unclear.'
+        $workDir = Join-Path ([IO.Path]::GetTempPath()) 'claude-ask-dialog'
+        [void](New-Item -ItemType Directory -Force -Path $workDir)
+        $psi = New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName = $claudeExe
+        $psi.Arguments = '-p --model haiku --effort low --setting-sources project --strict-mcp-config --tools "" --no-session-persistence ' +
+            "--disable-slash-commands --output-format text --system-prompt $(& $quote $system)"
+        $psi.WorkingDirectory = $workDir
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+        $psi.EnvironmentVariables.Remove('CLAUDECODE')
+        $psi.EnvironmentVariables['MAX_THINKING_TOKENS'] = '0'  # thinking makes it 4 s -> 20-40 s
+        try {
+            $proc = [Diagnostics.Process]::Start($psi)
+            $stdin = New-Object IO.StreamWriter($proc.StandardInput.BaseStream, [Text.UTF8Encoding]::new($false))
+            $stdin.Write("Word: $word`nText: $(Get-Copied $box.Text)")
+            $stdin.Close()
+            [void]$script:wordJobs.Add(@{ Word = $word; Key = $key; Box = $box; At = $at; Process = $proc
+                Output = $proc.StandardOutput.ReadToEndAsync(); Watch = [Diagnostics.Stopwatch]::StartNew() })
+            $wordTimer.Start()
+        } catch {
+            $wordTip.Show("$word → ?", $box, $at, 5000)
+        }
+    }
+    $wordTimer = New-Object Windows.Forms.Timer
+    $wordTimer.Interval = 200
+    $wordTimer.add_Tick({
+        foreach ($job in @($script:wordJobs)) {
+            $done = $job.Output.IsCompleted
+            if (-not $done -and $job.Watch.Elapsed.TotalSeconds -lt 60) { continue }
+            $script:wordJobs.Remove($job)
+            if (-not $done) { try { $job.Process.Kill() } catch {} }
+            $text = if ($done) { "$($job.Output.Result)".Trim() } else { '' }
+            if ($text) { $script:wordCache[$job.Key] = $text } else { $text = '?' }
+            if (-not $job.Box.IsDisposed) { $wordTip.Show("$($job.Word) → $text", $job.Box, $job.At, 15000) }
+        }
+        if ($script:wordJobs.Count -eq 0) { $wordTimer.Stop() }
+    })
     # -Linkable: rich text whose specification codes (AC-03, ADR-0019, PRD §5...) are links; see Set-Links.
     function New-SelectableText([int]$maxWidth, $font, $foreColor, $backColor, [switch]$Linkable) {
         $t = if ($Linkable) { New-Object Windows.Forms.RichTextBox } else { New-Object Windows.Forms.TextBox }
@@ -329,7 +579,8 @@ namespace ClaudeHook {
         }
         $t.add_TextChanged({ param($sender) Resize-SelectableText $sender; if ($sender -is [Windows.Forms.RichTextBox]) { Format-Links $sender } })
         $t.add_FontChanged({ param($sender) Resize-SelectableText $sender })
-        $t.add_MouseUp({ param($sender) Copy-Selection $sender })
+        $t.add_MouseDown({ param($sender, $e) Start-WordHold $sender $e })
+        $t.add_MouseUp({ param($sender) if (-not (Stop-WordHold)) { Copy-Selection $sender } })
         $t.add_KeyDown({
             param($sender, $e)
             if ($e.Control -and $e.KeyCode -eq 'A') { $sender.SelectAll(); $e.SuppressKeyPress = $true }
@@ -339,13 +590,8 @@ namespace ClaudeHook {
         $t
     }
 
-    # Texts that get translated: control + original text (GroupBox titles need '&' doubled).
-    $script:dyn = New-Object Collections.ArrayList
-    function Add-Dyn($control, [string]$text, [switch]$Amp) {
-        [void]$script:dyn.Add([pscustomobject]@{ Control = $control; Original = $text; Amp = [bool]$Amp })
-        Set-DynText $control $text $Amp
-    }
-    function Set-DynText($control, [string]$text, [bool]$amp) {
+    # A question's text on a control (GroupBox titles need '&' doubled).
+    function Set-QuestionText($control, [string]$text, [switch]$Amp) {
         if ($control -is [Windows.Forms.RichTextBox]) { $text = Protect-Codes $text }
         $control.Text = if ($amp) { $text -replace '&', '&&' } else { $text }
     }
@@ -376,131 +622,91 @@ namespace ClaudeHook {
         $out.Append($text.Substring($pos)).ToString()
     }
 
-    $main = New-Object Windows.Forms.FlowLayoutPanel
-    $main.Dock = 'Fill'
-    $main.FlowDirection = 'TopDown'
-    $main.WrapContents = $false
-    $main.AutoScroll = $true
-    $main.Padding = New-Object Windows.Forms.Padding((& $px 12))
-    $wheel = New-Object ClaudeHook.WheelRouter($main)
+    $wheel = New-Object ClaudeHook.WheelRouter
     [Windows.Forms.Application]::AddMessageFilter($wheel)
 
-    # Header row: project, branch and feature on a dark band, language flags on the right.
+    # The tab strip on a dark band, a tab per question call; under it the shown tab's page.
     $headerColor = [Drawing.Color]::FromArgb(30, 41, 59)
-    $top = New-Object Windows.Forms.TableLayoutPanel
-    $top.Dock = 'Top'
-    $top.AutoSize = $true
-    $top.ColumnCount = 2
-    [void]$top.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
-    [void]$top.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
-    $top.BackColor = $headerColor
-    $top.Padding = New-Object Windows.Forms.Padding((& $px 14), (& $px 10), (& $px 10), (& $px 10))
-
-    $contextFlow = New-Object Windows.Forms.FlowLayoutPanel
-    $contextFlow.AutoSize = $true
-    $contextFlow.Dock = 'Fill'
-    $contextFlow.Margin = New-Object Windows.Forms.Padding(0)
-    $captionFont = New-Object Drawing.Font('Segoe UI', 8, [Drawing.FontStyle]::Bold)
     $valueFont = New-Object Drawing.Font('Segoe UI Semibold', 13)
-    $valueColors = @{
+    $pathColor = [Drawing.Color]::FromArgb(125, 211, 252)
+    $strip = New-Object Windows.Forms.FlowLayoutPanel
+    $strip.Dock = 'Top'
+    $strip.AutoSize = $true
+    $strip.WrapContents = $true
+    $strip.BackColor = [Drawing.Color]::FromArgb(8, 11, 20)
+    $strip.Padding = New-Object Windows.Forms.Padding((& $px 8), (& $px 6), (& $px 8), 0)
+    $pages = New-Object Windows.Forms.Panel
+    $pages.Dock = 'Fill'
+
+    # A tab's head: the project, then the feature (else the branch), each in its own colour and cut with
+    # an ellipsis past its width (the tooltip has them whole). On a near-black band: the shown tab lighter,
+    # with a blue line along its bottom; one not opened yet has an amber line along its top.
+    $tabFont = New-Object Drawing.Font('Segoe UI Semibold', 10)
+    $tabWidths = @{ Project = (& $px 140); Feature = (& $px 200); Branch = (& $px 200) }
+    function Get-Trimmed([string]$text, $font, [int]$max) {
+        $fits = { param($s) [Windows.Forms.TextRenderer]::MeasureText($s, $font).Width -le $max }
+        if (& $fits $text) { return $text }
+        $n = $text.Length
+        while ($n -gt 1 -and -not (& $fits ($text.Substring(0, $n) + '…'))) { $n-- }
+        $text.Substring(0, $n).TrimEnd(' ', '-', '_', '/') + '…'
+    }
+    $titleColors = @{
         Project = [Drawing.Color]::White
         Branch  = [Drawing.Color]::FromArgb(125, 211, 252)
         Feature = [Drawing.Color]::FromArgb(134, 239, 172)
     }
-    $captions = @{}
-    foreach ($key in $context.Keys) {
-        $cell = New-Object Windows.Forms.FlowLayoutPanel
-        $cell.FlowDirection = 'TopDown'
-        $cell.WrapContents = $false
-        $cell.AutoSize = $true
-        $cell.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 28), 0)
-        $caption = New-Object Windows.Forms.Label
-        $caption.Font = $captionFont
-        $caption.ForeColor = [Drawing.Color]::FromArgb(148, 163, 184)
-        $caption.AutoSize = $true
-        $caption.Margin = New-Object Windows.Forms.Padding(0)
-        $captions[$key] = $caption
-        $value = New-SelectableText ($w - (& $px 100)) $valueFont $valueColors[$key] $headerColor
-        $value.Text = $context[$key]
-        $value.Margin = New-Object Windows.Forms.Padding(0)
-        $cell.Controls.AddRange(@($caption, $value))
-        $contextFlow.Controls.Add($cell)
-    }
-    $top.Controls.Add($contextFlow, 0, 0)
-
-    function New-Flag([string]$lang) {
-        $fw = & $px 30; $fh = & $px 20
-        $bmp = New-Object Drawing.Bitmap($fw, $fh)
-        $fg = [Drawing.Graphics]::FromImage($bmp)
-        if ($lang -eq 'uk') {
-            $fg.FillRectangle((New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(0, 87, 183))), 0, 0, $fw, [int]($fh / 2))
-            $fg.FillRectangle((New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(255, 215, 0))), 0, [int]($fh / 2), $fw, $fh - [int]($fh / 2))
-        } else {
-            $red = [Drawing.Color]::FromArgb(200, 16, 46)
-            $fg.SmoothingMode = 'AntiAlias'
-            $fg.Clear([Drawing.Color]::FromArgb(1, 33, 105))
-            foreach ($pen in @((New-Object Drawing.Pen([Drawing.Color]::White, ($fh / 5))), (New-Object Drawing.Pen($red, ($fh / 14))))) {
-                $fg.DrawLine($pen, 0, 0, $fw, $fh); $fg.DrawLine($pen, 0, $fh, $fw, 0)
-            }
-            $fg.SmoothingMode = 'None'
-            $white = New-Object Drawing.SolidBrush([Drawing.Color]::White)
-            $fg.FillRectangle($white, 0, [int]($fh * 0.34), $fw, [int]($fh * 0.32))
-            $fg.FillRectangle($white, [int]($fw / 2 - $fh * 0.16), 0, [int]($fh * 0.32), $fh)
-            $redBrush = New-Object Drawing.SolidBrush($red)
-            $fg.FillRectangle($redBrush, 0, [int]($fh * 0.41), $fw, [int]($fh * 0.18))
-            $fg.FillRectangle($redBrush, [int]($fw / 2 - $fh * 0.09), 0, [int]($fh * 0.18), $fh)
+    $tabBack = @{ Current = [Drawing.Color]::FromArgb(51, 65, 85); Other = $headerColor }
+    $unvisitedLine = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(251, 191, 36))
+    $currentLine = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(56, 189, 248))
+    function New-TabHead($tab) {
+        $head = New-Object Windows.Forms.FlowLayoutPanel
+        $head.AutoSize = $true
+        $head.WrapContents = $false
+        $head.Margin = New-Object Windows.Forms.Padding(0, (& $px 2), (& $px 4), 0)
+        $head.Padding = New-Object Windows.Forms.Padding((& $px 12), (& $px 8), (& $px 12), (& $px 7))
+        $head.Cursor = [Windows.Forms.Cursors]::Hand
+        $head.Tag = $tab
+        $head.add_Click({ param($sender) Select-Tab (Get-OwnerTab $sender) })
+        $head.add_Paint({
+            param($sender, $e)
+            if (-not $sender.Tag.Visited) { $e.Graphics.FillRectangle($unvisitedLine, 0, 0, $sender.Width, (& $px 3)) }
+            if ($sender.Tag -eq $script:current) { $e.Graphics.FillRectangle($currentLine, 0, $sender.Height - (& $px 3), $sender.Width, (& $px 3)) }
+        })
+        $tab.TitleLabels = @()
+        $rows = [ordered]@{ Project = $tab.Context['Project'] }
+        if ($tab.Context['Feature']) { $rows.Feature = $tab.Context['Feature'] } elseif ($tab.Context['Branch']) { $rows.Branch = $tab.Context['Branch'] }
+        foreach ($key in $rows.Keys) {
+            $label = New-Object Windows.Forms.Label
+            $label.AutoSize = $true
+            $label.UseMnemonic = $false
+            $label.Font = $tabFont
+            $label.ForeColor = $titleColors[$key]
+            $label.Text = Get-Trimmed $rows[$key] $tabFont $tabWidths[$key]
+            $label.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 2), 0)
+            $label.add_Click({ param($sender) Select-Tab (Get-OwnerTab $sender) })
+            $head.Controls.Add($label)
+            $tab.TitleLabels += $label
         }
-        $fg.Dispose()
-        $bmp
+        $head
     }
-    $flagPanel = New-Object Windows.Forms.FlowLayoutPanel
-    $flagPanel.AutoSize = $true
-    $flagPanel.WrapContents = $false
-    $flagPanel.Anchor = 'Top, Right'
-    $flagPanel.Margin = New-Object Windows.Forms.Padding(0)
-    $flags = @{}
-    foreach ($lang in 'uk', 'en') {
-        $fb = New-Object Windows.Forms.Button
-        $fb.Image = New-Flag $lang
-        $fb.Tag = $lang
-        $fb.FlatStyle = 'Flat'
-        $fb.FlatAppearance.BorderSize = & $px 2
-        $fb.FlatAppearance.MouseOverBackColor = [Drawing.Color]::FromArgb(51, 65, 85)
-        $fb.BackColor = $headerColor
-        $fb.Size = New-Object Drawing.Size((& $px 42), (& $px 32))
-        $fb.Margin = New-Object Windows.Forms.Padding((& $px 4), 0, 0, 0)
-        $fb.Cursor = [Windows.Forms.Cursors]::Hand
-        $fb.TabStop = $false
-        $tips.SetToolTip($fb, $ui[$lang].LanguageName)
-        $fb.add_Click({ param($sender) Switch-Language $sender.Tag })
-        $flagPanel.Controls.Add($fb)
-        $flags[$lang] = $fb
+    function Update-TabHead($tab) {
+        $tab.Head.BackColor = if ($tab -eq $script:current) { $tabBack.Current } else { $tabBack.Other }
+        $tab.Head.Invalidate()
     }
-    $top.Controls.Add($flagPanel, 1, 0)
 
     # References the questions mention, resolved to a section of a file under the repo's docs/:
     # AC-03 / US-02 (heading in docs/features/<slug>/PRD.md or spec.md), ADR-0019 (whole file in docs/adr
     # or docs/features/*/adr), docs/.../x.md with §5 or #anchor, and PRD|SAD|spec|... §6.4. Features are
-    # tried in order: the first one the question names (else the dialog), the title's feature, then the
-    # most recently edited.
-    $script:refRoot = if ($payload.cwd -and (Test-Path -LiteralPath (Join-Path $root 'docs'))) { $root } else { $null }
-    $script:refCache = @{}
-    $byEdit = @()
-    if ($script:refRoot -and $slugs) {
-        $edited = { param($dir) 'PRD.md', 'spec.md', 'sad.md' | ForEach-Object { Join-Path $dir $_ } |
-            Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { (Get-Item -LiteralPath $_).LastWriteTime } |
-            Sort-Object -Descending | Select-Object -First 1 }
-        $byEdit = @($slugs | Sort-Object -Descending { & $edited $_.FullName } | ForEach-Object { $_.Name })
-    }
-    function Get-NamedFeature([string]$text) {
+    # tried in order: the first one the question names (else the tab's questions), the title's feature,
+    # then the most recently edited. Each tab resolves against its own repo (Use-Tab).
+    function Get-NamedFeature([string]$text, [string[]]$slugs) {
         $first = $null
-        foreach ($slug in $byEdit) {
+        foreach ($slug in $slugs) {
             $hit = [regex]::Match($text, "(?<![\w-])$([regex]::Escape($slug))(?![\w-])")
             if ($hit.Success -and (-not $first -or $hit.Index -lt $first.Index)) { $first = @{ Index = $hit.Index; Slug = $slug } }
         }
         if ($first) { $first.Slug } else { '' }
     }
-    $dialogFeature = Get-NamedFeature $allText
     $docNames = @{ prd = 'PRD.md'; sad = 'sad.md'; spec = 'spec.md'; 'data-model' = 'data-model.md'; 'test-plan' = 'test-plan.md'
         'idea-brief' = 'idea-brief.md'; 'design-spec' = 'design-spec.md' }
     # Order matters: a path wins over a PRD § or an AC inside it.
@@ -665,7 +871,7 @@ namespace ClaudeHook {
         $path = New-Object Windows.Forms.LinkLabel
         $path.AutoSize = $true
         $path.Margin = New-Object Windows.Forms.Padding(0, (& $px 4), 0, 0)
-        $path.LinkColor = $valueColors.Branch
+        $path.LinkColor = $pathColor
         $path.ActiveLinkColor = [Drawing.Color]::White
         $path.LinkBehavior = 'HoverUnderline'
         $path.add_LinkClicked({
@@ -882,7 +1088,7 @@ $content
         $v.Form.Text = $ref.Key + $(if ($ref.Feature) { " · $($ref.Feature)" })
         $v.Title.Text = $ref.Title
         $v.Path.Text = "$($ref.Path):$($ref.Line)"
-        $tips.SetToolTip($v.Path, $ui[$script:lang].OpenFile)
+        $tips.SetToolTip($v.Path, $ui[$script:current.Lang].OpenFile)
         Set-ReferenceBody $v.Body $ref
         Update-ReferenceLinks
         $v.Form.ActiveControl = $v.Path  # no caret blinking in the text
@@ -900,17 +1106,18 @@ $content
 
     # Codes inside the question and option texts: a resolvable one keeps the text's font and is only tinted,
     # a muted blue a little lighter than the text around it; hovering shows a hand and where it leads, a click
-    # opens it in the reference window, dragging still selects and copies. Formatting follows the text, so a
-    # translated window links the same codes.
+    # opens it in the reference window, dragging still selects and copies.
     $linkColor = [Drawing.Color]::FromArgb(66, 100, 145)      # beside the near-black question text
     $linkColorDim = [Drawing.Color]::FromArgb(96, 128, 168)   # beside the grey option descriptions
     $script:links = @{}
-    function Set-Links($t, $color) {
-        $script:links[$t] = @{ Order = @($script:featureOrder); Color = $color; Ranges = @(); Hover = $null }
+    function Set-Links($tab, $t, $color) {
+        $script:links[$t] = @{ Tab = $tab; Order = @($script:featureOrder); Color = $color; Ranges = @(); Hover = $null }
     }
     function Format-Links($t) {
         $info = $script:links[$t]
-        if (-not $info -or -not $script:refRoot) { return }
+        if (-not $info) { return }
+        Use-Tab $info.Tab
+        if (-not $script:refRoot) { return }
         $script:featureOrder = $info.Order
         $info.Ranges = @(Get-Mentions (Get-Plain $t.Text) | ForEach-Object {
             $ref = Get-Reference $_
@@ -959,158 +1166,365 @@ $content
         if ($r) { Show-Reference $r.Ref }
     }
 
-    $refCaptions = @()
-    $entries = @()
-    $otherLabels = @()
-    for ($i = 0; $i -lt $questions.Count; $i++) {
-        $q = $questions[$i]
-        $rec = Get-Recommended $q
-
-        $box = New-Object Windows.Forms.GroupBox
-        Add-Dyn $box $(if ($q.header) { $q.header } else { "Question $($i + 1)" }) -Amp
-        $box.AutoSize = $true
-        $box.AutoSizeMode = 'GrowAndShrink'
-        $box.MinimumSize = New-Object Drawing.Size($w, 0)
-        $box.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 10))
-
-        $inner = New-Object Windows.Forms.FlowLayoutPanel
-        $inner.FlowDirection = 'TopDown'
-        $inner.WrapContents = $false
-        $inner.AutoSize = $true
-        $inner.AutoSizeMode = 'GrowAndShrink'
-        $inner.Location = New-Object Drawing.Point((& $px 10), (& $px 24))
-        $box.Controls.Add($inner)
-
-        # This question's features, in the order its references are looked up.
-        $named = ''
-        if ($script:refRoot) {
-            $qText = @($q.question; @($q.options) | ForEach-Object { $_.label; $_.description; $_.preview }) -join "`n"
-            $named = Get-NamedFeature $qText
-            if (-not $named) { $named = $dialogFeature }
-            $script:featureOrder = @(@($named, $context['Feature']) + $byEdit | Where-Object { $_ } | Select-Object -Unique)
-        }
-
-        $text = New-SelectableText ($w - (& $px 30)) $bold $form.ForeColor $form.BackColor -Linkable
-        Set-Links $text $linkColor
-        Add-Dyn $text $q.question
-        $text.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
-        $inner.Controls.Add($text)
-
-        # The question and descriptions link their codes in place; codes only in option labels or previews,
-        # which cannot hold links, get a row of their own.
-        $refs = @()
-        if ($script:refRoot) {
-            $inText = @(@($q.question) + @(@($q.options) | ForEach-Object { $_.description }) | Where-Object { $_ } |
-                ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } | Where-Object { $_ })
-            $seen = @{}
-            $refs = @(@(@($q.options) | ForEach-Object { $_.label; $_.preview }) | Where-Object { $_ } |
-                ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } |
-                Where-Object { $_ -and $inText -notcontains $_ -and -not $seen.ContainsKey($_.Key) } | ForEach-Object { $seen[$_.Key] = $true; $_ })
-        }
-        if ($refs.Count -gt 0) {
-            $refRow = New-Object Windows.Forms.FlowLayoutPanel
-            $refRow.AutoSize = $true
-            $refRow.WrapContents = $true
-            $refRow.MaximumSize = New-Object Drawing.Size(($w - (& $px 30)), 0)
-            $refRow.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
-            $refCaption = New-Object Windows.Forms.Label
-            $refCaption.AutoSize = $true
-            $refCaption.ForeColor = $gray
-            $refCaption.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 4), 0)
-            $refCaptions += $refCaption
-            $refRow.Controls.Add($refCaption)
-            foreach ($ref in $refs) {
-                $link = New-Object Windows.Forms.LinkLabel
-                $link.AutoSize = $true
-                $link.UseMnemonic = $false
-                # Say which feature an AC or a § came from when the questions did not name it.
-                $link.Text = if ($ref.Feature -and $ref.Feature -ne $named) { "$($ref.Key) · $($ref.Feature)" } else { $ref.Key }
-                $link.Tag = $ref
-                $link.LinkBehavior = 'HoverUnderline'
-                $link.LinkColor = $linkColorDim
-                $link.ActiveLinkColor = $linkColor
-                $link.VisitedLinkColor = $linkColorDim
-                $link.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 10), 0)
-                $tips.SetToolTip($link, "$($ref.Title)`n$($ref.Path):$($ref.Line)")
-                $link.add_LinkClicked({ param($sender) Show-Reference $sender.Tag })
-                [void]$script:refLinks.Add($link)
-                $refRow.Controls.Add($link)
-            }
-            $inner.Controls.Add($refRow)
-        }
-
-        $choices = @()
-        foreach ($o in @($q.options)) {
-            $c = if ($q.multiSelect) { New-Object Windows.Forms.CheckBox } else { New-Object Windows.Forms.RadioButton }
-            Add-Dyn $c $o.label
-            $c.Tag = $o.label
-            $c.UseMnemonic = $false
-            $c.AutoSize = $true
-            $c.Margin = New-Object Windows.Forms.Padding((& $px 3), (& $px 2), 0, 0)
-            if ($rec -contains $o.label) { $c.Font = $bold; $c.Checked = $true }
-            if ($o.preview) { $tips.SetToolTip($c, $o.preview) }
-            $inner.Controls.Add($c)
-            $choices += $c
-
-            if ($o.description) {
-                $d = New-SelectableText ($w - (& $px 60)) $form.Font $gray $form.BackColor -Linkable
-                Set-Links $d $linkColorDim
-                Add-Dyn $d $o.description
-                $d.Margin = New-Object Windows.Forms.Padding((& $px 22), 0, 0, (& $px 4))
-                $inner.Controls.Add($d)
-            }
-        }
-
-        $row = New-Object Windows.Forms.FlowLayoutPanel
-        $row.AutoSize = $true
-        $row.WrapContents = $false
-        $row.Margin = New-Object Windows.Forms.Padding(0, (& $px 6), 0, 0)
-        $otherLabel = New-Object Windows.Forms.Label
-        $otherLabel.AutoSize = $true
-        $otherLabel.Margin = New-Object Windows.Forms.Padding(0, (& $px 5), (& $px 4), 0)
-        $otherLabels += $otherLabel
-        $other = New-Object Windows.Forms.TextBox
-        $other.Width = $w - (& $px 110)
-        $row.Controls.AddRange(@($otherLabel, $other))
-        $inner.Controls.Add($row)
-
-        $main.Controls.Add($box)
-        $entries += [pscustomobject]@{ Question = $q; Choices = $choices; Other = $other }
-    }
-
-    # Free-text message for Claude, sent as additionalContext with whatever button closes the window.
-    $notePanel = New-Object Windows.Forms.FlowLayoutPanel
-    $notePanel.Dock = 'Bottom'
-    $notePanel.AutoSize = $true
-    $notePanel.FlowDirection = 'TopDown'
-    $notePanel.WrapContents = $false
-    $notePanel.Padding = New-Object Windows.Forms.Padding((& $px 12), (& $px 8), (& $px 12), 0)
-    $noteLabel = New-Object Windows.Forms.Label
-    $noteLabel.AutoSize = $true
-    $noteLabel.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 3))
-    $note = New-Object Windows.Forms.TextBox
-    $note.Multiline = $true
-    $note.AcceptsReturn = $true
-    $note.ScrollBars = 'Vertical'
-    $note.MaxLength = 9000
-    $note.Size = New-Object Drawing.Size(($w + (& $px 14)), (& $px 64))
-    $note.Margin = New-Object Windows.Forms.Padding(0)
-    $attachPanel = New-Object Windows.Forms.FlowLayoutPanel
-    $attachPanel.AutoSize = $true
-    $attachPanel.Visible = $false
-    $attachPanel.Margin = New-Object Windows.Forms.Padding(0, (& $px 4), 0, 0)
-    $notePanel.Controls.AddRange(@($noteLabel, $note, $attachPanel))
-
     # Images: hooks can only pass text, so each image is a file whose path goes to Claude as [Image #n].
     $imageDir = Join-Path ([IO.Path]::GetTempPath()) 'claude-ask-dialog\images'
     [void](New-Item -ItemType Directory -Force -Path $imageDir)
     Get-ChildItem -LiteralPath $imageDir -File -ErrorAction SilentlyContinue |
         Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force -ErrorAction SilentlyContinue
-    $script:attachments = New-Object Collections.ArrayList
-    $script:imageCount = 0
-    function Add-Attachment([string]$path, [bool]$owned) {
-        $script:imageCount++
-        $n = $script:imageCount
+
+    # Tabs: one per question call, each a hashtable (IsTab) on its page's and its head's Tag. Event handlers
+    # run long after Add-QuestionTab returns, so they find their tab from the control (Get-OwnerTab).
+    $script:tabs = New-Object Collections.ArrayList
+    $script:current = $null
+    function Get-OwnerTab($control) {
+        for ($c = $control; $c; $c = $c.Parent) { if ($c.Tag -is [hashtable] -and $c.Tag.IsTab) { return $c.Tag } }
+        $null
+    }
+    # Reference lookups go to the tab's repo.
+    function Use-Tab($tab) {
+        $script:refRoot = $tab.RefRoot
+        $script:refCache = $tab.RefCache
+    }
+
+    function Add-QuestionTab($payload, $request) {
+        $questions = @($payload.tool_input.questions)
+        $found = Get-QuestionContext $payload.cwd
+        $context = $found.Context
+        $allText = ($questions | ForEach-Object { $_.question; $_.header; @($_.options) | ForEach-Object { $_.label; $_.description } }) -join ' '
+        $second = if ($context['Feature']) { $context['Feature'] } else { $context['Branch'] }
+        # The tab's own texts (buttons, captions) speak the questions' language.
+        $tab = @{
+            IsTab = $true; Payload = $payload; Request = $request; Context = $context
+            Title = $context['Project'] + $(if ($second) { " · $second" })
+            Lang = $(if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' })
+            Visited = $false; RefCache = @{}; Entries = @(); OtherLabels = @(); RefCaptions = @()
+            Attachments = [Collections.ArrayList]::new(); ImageCount = 0
+        }
+        $root = $found.Root
+        $tab.RefRoot = if ($root -and (Test-Path -LiteralPath (Join-Path $root 'docs'))) { $root } else { $null }
+        $byEdit = @()
+        if ($tab.RefRoot -and $found.Slugs) {
+            $edited = { param($dir) 'PRD.md', 'spec.md', 'sad.md' | ForEach-Object { Join-Path $dir $_ } |
+                Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { (Get-Item -LiteralPath $_).LastWriteTime } |
+                Sort-Object -Descending | Select-Object -First 1 }
+            $byEdit = @($found.Slugs | Sort-Object -Descending { & $edited $_.FullName } | ForEach-Object { $_.Name })
+        }
+        Use-Tab $tab
+        $tabFeature = Get-NamedFeature $allText $byEdit
+
+        $page = New-Object Windows.Forms.Panel
+        $page.Dock = 'Fill'
+        $page.Visible = $false
+        $page.Tag = $tab
+        $tab.Page = $page
+        $main = New-Object Windows.Forms.FlowLayoutPanel
+        $main.Dock = 'Fill'
+        $main.FlowDirection = 'TopDown'
+        $main.WrapContents = $false
+        $main.AutoScroll = $true
+        $main.Padding = New-Object Windows.Forms.Padding((& $px 12))
+        $tab.Main = $main
+
+        for ($i = 0; $i -lt $questions.Count; $i++) {
+            $q = $questions[$i]
+            $rec = Get-Recommended $q
+
+            $box = New-Object Windows.Forms.GroupBox
+            Set-QuestionText $box $(if ($q.header) { $q.header } else { "Question $($i + 1)" }) -Amp
+            $box.AutoSize = $true
+            $box.AutoSizeMode = 'GrowAndShrink'
+            $box.MinimumSize = New-Object Drawing.Size($w, 0)
+            $box.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 10))
+
+            $inner = New-Object Windows.Forms.FlowLayoutPanel
+            $inner.FlowDirection = 'TopDown'
+            $inner.WrapContents = $false
+            $inner.AutoSize = $true
+            $inner.AutoSizeMode = 'GrowAndShrink'
+            $inner.Location = New-Object Drawing.Point((& $px 10), (& $px 24))
+            $box.Controls.Add($inner)
+
+            # This question's features, in the order its references are looked up.
+            $named = ''
+            if ($tab.RefRoot) {
+                $qText = @($q.question; @($q.options) | ForEach-Object { $_.label; $_.description; $_.preview }) -join "`n"
+                $named = Get-NamedFeature $qText $byEdit
+                if (-not $named) { $named = $tabFeature }
+                $script:featureOrder = @(@($named, $context['Feature']) + $byEdit | Where-Object { $_ } | Select-Object -Unique)
+            }
+
+            $text = New-SelectableText ($w - (& $px 30)) $bold $form.ForeColor $form.BackColor -Linkable
+            Set-Links $tab $text $linkColor
+            Set-QuestionText $text $q.question
+            $text.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
+            $inner.Controls.Add($text)
+
+            # The question and descriptions link their codes in place; codes only in option labels or previews,
+            # which cannot hold links, get a row of their own.
+            $refs = @()
+            if ($tab.RefRoot) {
+                $inText = @(@($q.question) + @(@($q.options) | ForEach-Object { $_.description }) | Where-Object { $_ } |
+                    ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } | Where-Object { $_ })
+                $seen = @{}
+                $refs = @(@(@($q.options) | ForEach-Object { $_.label; $_.preview }) | Where-Object { $_ } |
+                    ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } |
+                    Where-Object { $_ -and $inText -notcontains $_ -and -not $seen.ContainsKey($_.Key) } | ForEach-Object { $seen[$_.Key] = $true; $_ })
+            }
+            if ($refs.Count -gt 0) {
+                $refRow = New-Object Windows.Forms.FlowLayoutPanel
+                $refRow.AutoSize = $true
+                $refRow.WrapContents = $true
+                $refRow.MaximumSize = New-Object Drawing.Size(($w - (& $px 30)), 0)
+                $refRow.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
+                $refCaption = New-Object Windows.Forms.Label
+                $refCaption.AutoSize = $true
+                $refCaption.ForeColor = $gray
+                $refCaption.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 4), 0)
+                $tab.RefCaptions += $refCaption
+                $refRow.Controls.Add($refCaption)
+                foreach ($ref in $refs) {
+                    $link = New-Object Windows.Forms.LinkLabel
+                    $link.AutoSize = $true
+                    $link.UseMnemonic = $false
+                    # Say which feature an AC or a § came from when the questions did not name it.
+                    $link.Text = if ($ref.Feature -and $ref.Feature -ne $named) { "$($ref.Key) · $($ref.Feature)" } else { $ref.Key }
+                    $link.Tag = $ref
+                    $link.LinkBehavior = 'HoverUnderline'
+                    $link.LinkColor = $linkColorDim
+                    $link.ActiveLinkColor = $linkColor
+                    $link.VisitedLinkColor = $linkColorDim
+                    $link.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 10), 0)
+                    $tips.SetToolTip($link, "$($ref.Title)`n$($ref.Path):$($ref.Line)")
+                    $link.add_LinkClicked({ param($sender) Show-Reference $sender.Tag })
+                    [void]$script:refLinks.Add($link)
+                    $refRow.Controls.Add($link)
+                }
+                $inner.Controls.Add($refRow)
+            }
+
+            $choices = @()
+            foreach ($o in @($q.options)) {
+                $c = if ($q.multiSelect) { New-Object Windows.Forms.CheckBox } else { New-Object Windows.Forms.RadioButton }
+                Set-QuestionText $c $o.label
+                $c.Tag = $o.label
+                $c.UseMnemonic = $false
+                $c.AutoSize = $true
+                $c.Margin = New-Object Windows.Forms.Padding((& $px 3), (& $px 2), 0, 0)
+                if ($rec -contains $o.label) { $c.Font = $bold; $c.Checked = $true }
+                if ($o.preview) { $tips.SetToolTip($c, $o.preview) }
+                $inner.Controls.Add($c)
+                $choices += $c
+
+                if ($o.description) {
+                    $d = New-SelectableText ($w - (& $px 60)) $form.Font $gray $form.BackColor -Linkable
+                    Set-Links $tab $d $linkColorDim
+                    Set-QuestionText $d $o.description
+                    $d.Margin = New-Object Windows.Forms.Padding((& $px 22), 0, 0, (& $px 4))
+                    $inner.Controls.Add($d)
+                }
+            }
+
+            $row = New-Object Windows.Forms.FlowLayoutPanel
+            $row.AutoSize = $true
+            $row.WrapContents = $false
+            $row.Margin = New-Object Windows.Forms.Padding(0, (& $px 6), 0, 0)
+            $otherLabel = New-Object Windows.Forms.Label
+            $otherLabel.AutoSize = $true
+            $otherLabel.Margin = New-Object Windows.Forms.Padding(0, (& $px 5), (& $px 4), 0)
+            $tab.OtherLabels += $otherLabel
+            $other = New-Object Windows.Forms.TextBox
+            $other.Width = $w - (& $px 110)
+            $row.Controls.AddRange(@($otherLabel, $other))
+            $inner.Controls.Add($row)
+
+            $main.Controls.Add($box)
+            $tab.Entries += [pscustomobject]@{ Question = $q; Choices = $choices; Other = $other }
+        }
+
+        # Free-text message for Claude, sent as additionalContext with whatever button closes the tab.
+        $notePanel = New-Object Windows.Forms.FlowLayoutPanel
+        $notePanel.Dock = 'Bottom'
+        $notePanel.AutoSize = $true
+        $notePanel.FlowDirection = 'TopDown'
+        $notePanel.WrapContents = $false
+        $notePanel.Padding = New-Object Windows.Forms.Padding((& $px 12), (& $px 8), (& $px 12), 0)
+        $noteLabel = New-Object Windows.Forms.Label
+        $noteLabel.AutoSize = $true
+        $noteLabel.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 3))
+        $note = New-Object Windows.Forms.TextBox
+        $note.Multiline = $true
+        $note.AcceptsReturn = $true
+        $note.ScrollBars = 'Vertical'
+        $note.MaxLength = 9000
+        $note.Size = New-Object Drawing.Size(($w + (& $px 14)), (& $px 64))
+        $note.Margin = New-Object Windows.Forms.Padding(0)
+        $attachPanel = New-Object Windows.Forms.FlowLayoutPanel
+        $attachPanel.AutoSize = $true
+        $attachPanel.Visible = $false
+        $attachPanel.Margin = New-Object Windows.Forms.Padding(0, (& $px 4), 0, 0)
+        $notePanel.Controls.AddRange(@($noteLabel, $note, $attachPanel))
+        $note.add_KeyDown({
+            param($sender, $e)
+            if ($e.Control -and $e.KeyCode -eq 'Return') {
+                $e.SuppressKeyPress = $true
+                (Get-OwnerTab $sender).Submit.PerformClick()
+            } elseif (($e.Control -and $e.KeyCode -eq 'V') -or ($e.Shift -and $e.KeyCode -eq 'Insert')) {
+                if (Add-ClipboardImages (Get-OwnerTab $sender)) { $e.SuppressKeyPress = $true }
+            }
+        })
+        $tab.NotePanel = $notePanel; $tab.NoteLabel = $noteLabel; $tab.Note = $note; $tab.AttachPanel = $attachPanel
+
+        # The bottom row: Keep Recommended on the left, the buttons (and the status) from the right.
+        $bar = New-Object Windows.Forms.TableLayoutPanel
+        $bar.Dock = 'Bottom'
+        $bar.AutoSize = $true
+        $bar.ColumnCount = 2
+        $bar.RowCount = 1
+        [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
+        [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
+        [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+        $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
+        $keepRecommended = New-Object Windows.Forms.CheckBox
+        $keepRecommended.AutoSize = $true
+        $keepRecommended.Anchor = 'Left'
+        $keepRecommended.Checked = [bool]$env:ASK_DIALOG_KEEP
+        $bar.Controls.Add($keepRecommended, 0, 0)
+        $buttons = New-Object Windows.Forms.FlowLayoutPanel
+        $buttons.FlowDirection = 'RightToLeft'
+        $buttons.AutoSize = $true
+        $buttons.Dock = 'Fill'
+        $buttons.Margin = New-Object Windows.Forms.Padding(0)
+        $bar.Controls.Add($buttons, 1, 0)
+        $mkButton = {
+            $b = New-Object Windows.Forms.Button
+            $b.AutoSize = $true
+            $b.MinimumSize = New-Object Drawing.Size((& $px 100), (& $px 32))
+            $buttons.Controls.Add($b)
+            $b
+        }
+        $closeBtn = & $mkButton
+        $submitBtn = & $mkButton
+        $status = New-Object Windows.Forms.Label
+        $status.AutoSize = $true
+        $status.Margin = New-Object Windows.Forms.Padding(0, (& $px 8), (& $px 10), 0)
+        $buttons.Controls.Add($status)
+        $closeBtn.add_Click({ param($sender) Complete-Tab (Get-OwnerTab $sender) 'close' })
+        $submitBtn.add_Click({
+            param($sender)
+            $owner = Get-OwnerTab $sender
+            $missing = @($owner.Entries | Where-Object { -not ($_.Choices | Where-Object Checked) -and -not $_.Other.Text.Trim() })
+            if ($missing.Count -gt 0) { Show-Status ($ui[$owner.Lang].Missing -f $missing.Count) $true $owner; return }
+            Complete-Tab $owner 'submit'
+        })
+        $tab.Bar = $bar; $tab.Keep = $keepRecommended; $tab.Submit = $submitBtn; $tab.Close = $closeBtn; $tab.Status = $status
+
+        $page.Controls.Add($main)
+        $page.Controls.Add($notePanel)
+        $page.Controls.Add($bar)
+        $pages.Controls.Add($page)
+        $tab.Head = New-TabHead $tab
+        $strip.Controls.Add($tab.Head)
+        [void]$script:tabs.Add($tab)
+        Set-TabTexts $tab
+        if ($script:current) { Update-WindowTitle } else { Select-Tab $tab }
+    }
+
+    function Select-Tab($tab) {
+        if (-not $tab -or $script:current -eq $tab) { return }
+        Close-Reference
+        $old = $script:current
+        $script:current = $tab
+        $tab.Visited = $true
+        $tab.Page.Visible = $true
+        if ($old) { $old.Page.Visible = $false; Update-TabHead $old }
+        Update-TabHead $tab
+        $wheel.Target = $tab.Main
+        $form.AcceptButton = $tab.Submit
+        $form.CancelButton = $tab.Close
+        Update-WindowTitle
+        if ($form.Visible) { [void]$tab.Submit.Focus() }
+    }
+
+    function Update-WindowTitle {
+        $tab = $script:current
+        if (-not $tab) { return }
+        $count = if ($script:tabs.Count -gt 1) { " ($($script:tabs.Count))" } else { '' }
+        $form.Text = $ui[$tab.Lang].Title + $count + ' - ' + ($tab.Context.Values -join ' | ')
+    }
+
+    function Close-Reference {
+        $v = $script:viewer
+        if ($v -and -not $v.Form.IsDisposed -and $v.Form.Visible) { $v.Form.Close() }
+    }
+
+    # A tab is done: its answers (or nothing, for the terminal prompt) go to its hook, and the tab goes.
+    function Complete-Tab($tab, [string]$mode) {
+        $output = Get-TabOutput $tab $mode
+        if ($tab.Request) { $tab.Request.Reply($output) } else { [Console]::Out.Write($output) }
+        Remove-Tab $tab
+    }
+
+    function Remove-Tab($tab) {
+        $index = $script:tabs.IndexOf($tab)
+        if ($index -lt 0) { return }
+        $script:tabs.RemoveAt($index)
+        foreach ($key in @($script:links.Keys)) { if ($script:links[$key].Tab -eq $tab) { $script:links.Remove($key) } }
+        foreach ($l in @($script:refLinks)) { if ((Get-OwnerTab $l) -eq $tab) { $script:refLinks.Remove($l) } }
+        if ($script:current -eq $tab) {
+            Close-Reference
+            $script:current = $null
+            if ($script:tabs.Count) { Select-Tab $script:tabs[[Math]::Min($index, $script:tabs.Count - 1)] }
+        }
+        $strip.Controls.Remove($tab.Head)
+        $pages.Controls.Remove($tab.Page)
+        $tab.Head.Dispose()
+        $tab.Page.Dispose()
+        if ($script:tabs.Count -eq 0) {
+            $wheel.Target = $null
+            $form.Hide()
+            $script:idleSince = Get-Date
+        } else {
+            Update-WindowTitle
+            Update-FormHeight
+        }
+    }
+
+    function Get-TabOutput($tab, [string]$mode) {
+        $noteText = $tab.Note.Text.Trim()
+        $imageBlock = ''
+        if ($tab.Attachments.Count) {
+            $imageBlock = "`n`nAttached images (open each with the Read tool before replying):`n" +
+                (($tab.Attachments | ForEach-Object { "[Image #$($_.Number)]: $($_.Path)" }) -join "`n")
+        }
+        $noteContext = if ($noteText -or $imageBlock) { "Additional message from the user, written in the question dialog:`n$noteText$imageBlock" } else { '' }
+
+        if ($mode -eq 'close') {
+            # Closed without answering: the terminal prompt follows, but the message still reaches Claude.
+            if (-not $noteContext) { return '' }
+            $result = @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; additionalContext = $noteContext } }
+            return (ConvertTo-Json -InputObject $result -Depth 5 -Compress)
+        }
+
+        # Answers always use the original question and option texts, whatever language is shown.
+        $answers = [ordered]@{}
+        foreach ($entry in $tab.Entries) {
+            $labels = @($entry.Choices | Where-Object Checked | ForEach-Object { $_.Tag })
+            $typed = $entry.Other.Text.Trim()
+            if ($typed) { $labels = if ($entry.Question.multiSelect) { $labels + $typed } else { @($typed) } }
+            if ($labels.Count -gt 0) { $answers[$entry.Question.question] = $labels -join ', ' }
+        }
+
+        if ($tab.Keep.Checked) {
+            Set-KeepRecommendedMark $tab.Payload.session_id
+            $keepNote = 'The user ticked Keep Recommended: their later questions in this session are answered with the recommended options without being shown.'
+            $noteContext = if ($noteContext) { "$noteContext`n`n$keepNote" } else { $keepNote }
+        }
+        Get-AnswersOutput $tab.Payload.tool_input $answers 'Answered in the desktop dialog' $noteContext
+    }
+
+    function Add-Attachment($tab, [string]$path, [bool]$owned) {
+        $tab.ImageCount++
+        $n = $tab.ImageCount
         $pb = New-Object Windows.Forms.PictureBox
         $pb.Size = New-Object Drawing.Size((& $px 64), (& $px 64))
         $pb.SizeMode = 'Zoom'
@@ -1120,214 +1534,112 @@ $content
         catch { $pb.BackColor = [Drawing.Color]::Gainsboro }
         $item = [pscustomobject]@{ Number = $n; Path = $path; Owned = $owned; Box = $pb }
         $pb.Tag = $item
-        $tips.SetToolTip($pb, ($ui[$script:lang].ImageTip -f $n) + "`n" + $path)
-        $pb.add_Click({ param($sender) Remove-Attachment $sender.Tag })
-        [void]$script:attachments.Add($item)
-        $attachPanel.Controls.Add($pb)
-        $attachPanel.Visible = $true
-        $note.SelectedText = "[Image #$n] "
+        $tips.SetToolTip($pb, ($ui[$tab.Lang].ImageTip -f $n) + "`n" + $path)
+        $pb.add_Click({ param($sender) Remove-Attachment (Get-OwnerTab $sender) $sender.Tag })
+        [void]$tab.Attachments.Add($item)
+        $tab.AttachPanel.Controls.Add($pb)
+        $tab.AttachPanel.Visible = $true
+        $tab.Note.SelectedText = "[Image #$n] "
         Update-FormHeight
     }
-    function Remove-Attachment($item) {
-        $script:attachments.Remove($item)
-        $attachPanel.Controls.Remove($item.Box)
+    function Remove-Attachment($tab, $item) {
+        $tab.Attachments.Remove($item)
+        $tab.AttachPanel.Controls.Remove($item.Box)
         if ($item.Box.Image) { $item.Box.Image.Dispose() }
         $item.Box.Dispose()
         if ($item.Owned) { Remove-Item -LiteralPath $item.Path -Force -ErrorAction SilentlyContinue }
+        $note = $tab.Note
         $note.Text = $note.Text.Replace("[Image #$($item.Number)] ", '').Replace("[Image #$($item.Number)]", '')
-        $attachPanel.Visible = $script:attachments.Count -gt 0
+        $tab.AttachPanel.Visible = $tab.Attachments.Count -gt 0
         Update-FormHeight
     }
-    function Add-ClipboardImages {
+    function Add-ClipboardImages($tab) {
         if ([Windows.Forms.Clipboard]::ContainsImage()) {
             $img = [Windows.Forms.Clipboard]::GetImage()
             $path = Join-Path $imageDir ('image-{0:yyyyMMdd-HHmmss-fff}.png' -f (Get-Date))
             $img.Save($path, [Drawing.Imaging.ImageFormat]::Png)
             $img.Dispose()
-            Add-Attachment $path $true
+            Add-Attachment $tab $path $true
             return $true
         }
         if ([Windows.Forms.Clipboard]::ContainsFileDropList()) {
             $files = @([Windows.Forms.Clipboard]::GetFileDropList() | Where-Object { $_ -match '\.(png|jpe?g|gif|bmp|webp)$' })
-            foreach ($file in $files) { Add-Attachment $file $false }
+            foreach ($file in $files) { Add-Attachment $tab $file $false }
             return $files.Count -gt 0
         }
         return $false
     }
-    $note.add_KeyDown({
-        param($sender, $e)
-        if ($e.Control -and $e.KeyCode -eq 'Return') {
-            $e.SuppressKeyPress = $true
-            $submitBtn.PerformClick()
-        } elseif (($e.Control -and $e.KeyCode -eq 'V') -or ($e.Shift -and $e.KeyCode -eq 'Insert')) {
-            if (Add-ClipboardImages) { $e.SuppressKeyPress = $true }
-        }
-    })
 
-    # The bottom row: Keep Recommended on the left, the buttons (and the status) from the right.
-    $bar = New-Object Windows.Forms.TableLayoutPanel
-    $bar.Dock = 'Bottom'
-    $bar.AutoSize = $true
-    $bar.ColumnCount = 2
-    $bar.RowCount = 1
-    [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
-    [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
-    [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
-    $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
-    $keepRecommended = New-Object Windows.Forms.CheckBox
-    $keepRecommended.AutoSize = $true
-    $keepRecommended.Anchor = 'Left'
-    $keepRecommended.Checked = [bool]$env:ASK_DIALOG_KEEP
-    $bar.Controls.Add($keepRecommended, 0, 0)
-    $buttons = New-Object Windows.Forms.FlowLayoutPanel
-    $buttons.FlowDirection = 'RightToLeft'
-    $buttons.AutoSize = $true
-    $buttons.Dock = 'Fill'
-    $buttons.Margin = New-Object Windows.Forms.Padding(0)
-    $bar.Controls.Add($buttons, 1, 0)
-    $mkButton = {
-        $b = New-Object Windows.Forms.Button
-        $b.AutoSize = $true
-        $b.MinimumSize = New-Object Drawing.Size((& $px 100), (& $px 32))
-        $buttons.Controls.Add($b)
-        $b
-    }
-    $closeBtn = & $mkButton
-    $submitBtn = & $mkButton
-    $status = New-Object Windows.Forms.Label
-    $status.AutoSize = $true
-    $status.Margin = New-Object Windows.Forms.Padding(0, (& $px 8), (& $px 10), 0)
-    $buttons.Controls.Add($status)
-    function Show-Status([string]$text, [bool]$isError) {
-        $status.ForeColor = if ($isError) { [Drawing.Color]::Firebrick } else { $gray }
-        $status.Text = $text
+    function Show-Status([string]$text, [bool]$isError, $tab = $script:current) {
+        if (-not $tab) { return }
+        $tab.Status.ForeColor = if ($isError) { [Drawing.Color]::Firebrick } else { $gray }
+        $tab.Status.Text = $text
     }
 
-    $script:mode = 'close'
-    $closeBtn.add_Click({ $form.Close() })
-    $submitBtn.add_Click({
-        $missing = @($entries | Where-Object { -not ($_.Choices | Where-Object Checked) -and -not $_.Other.Text.Trim() })
-        if ($missing.Count -gt 0) { Show-Status ($ui[$script:lang].Missing -f $missing.Count) $true; return }
-        $script:mode = 'submit'
-        $form.Close()
-    })
-    $form.AcceptButton = $submitBtn
-    $form.CancelButton = $closeBtn
-
-    $form.Controls.Add($main)
-    $form.Controls.Add($notePanel)
-    $form.Controls.Add($bar)
-    $form.Controls.Add($top)
+    $form.Controls.Add($pages)
+    $form.Controls.Add($strip)
     $clientWidth = $w + (& $px 50)
+    # As tall as the tallest tab, so switching tabs keeps the window still.
     function Update-FormHeight {
-        $contentHeight = $main.GetPreferredSize((New-Object Drawing.Size(($w + (& $px 40)), 0))).Height +
-            $top.GetPreferredSize((New-Object Drawing.Size($clientWidth, 0))).Height + $notePanel.PreferredSize.Height + $bar.PreferredSize.Height
+        $pageHeight = 0
+        foreach ($tab in $script:tabs) {
+            $height = $tab.Main.GetPreferredSize((New-Object Drawing.Size(($w + (& $px 40)), 0))).Height +
+                $tab.NotePanel.PreferredSize.Height + $tab.Bar.PreferredSize.Height
+            $pageHeight = [Math]::Max($pageHeight, $height)
+        }
+        $contentHeight = $pageHeight + $strip.GetPreferredSize((New-Object Drawing.Size($clientWidth, 0))).Height
         $maxHeight = [int]([Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height * 0.85)
         $form.ClientSize = New-Object Drawing.Size($clientWidth, [Math]::Min($contentHeight, $maxHeight))
     }
 
-    # Language switching. Translations are cached; the original language needs no call.
-    $script:translations = @{ $origLang = @($script:dyn | ForEach-Object { $_.Original }) }
-    $script:job = $null
-    function Set-Language([string]$lang) {
-        $script:lang = $lang
-        $t = $ui[$lang]
-        $items = $script:translations[$lang]
-        for ($k = 0; $k -lt $script:dyn.Count; $k++) {
-            $item = $script:dyn[$k]
-            Set-DynText $item.Control $items[$k] $item.Amp
-        }
-        $form.Text = $t.Title + ' - ' + ($context.Values -join ' | ')
-        foreach ($key in $captions.Keys) { $captions[$key].Text = $t[$key] }
-        foreach ($l in $otherLabels) { $l.Text = $t.Other }
-        foreach ($l in $refCaptions) { $l.Text = $t.References }
-        $noteLabel.Text = $t.Note
-        $submitBtn.Text = $t.Submit
-        $closeBtn.Text = $t.Close
-        $keepRecommended.Text = $t.KeepRecommended
-        $tips.SetToolTip($keepRecommended, $t.KeepRecommendedTip)
-        foreach ($code in $flags.Keys) {
-            $flags[$code].FlatAppearance.BorderColor = if ($code -eq $lang) { [Drawing.Color]::White } else { $headerColor }
-        }
-        Show-Status '' $false
+    # The tab's own texts, in its questions' language.
+    function Set-TabTexts($tab) {
+        $t = $ui[$tab.Lang]
+        foreach ($l in $tab.OtherLabels) { $l.Text = $t.Other }
+        foreach ($l in $tab.RefCaptions) { $l.Text = $t.References }
+        $tab.NoteLabel.Text = $t.Note
+        $tab.Submit.Text = $t.Submit
+        $tab.Close.Text = $t.Close
+        $tab.Keep.Text = $t.KeepRecommended
+        $tips.SetToolTip($tab.Keep, $t.KeepRecommendedTip)
+        $whole = ($tab.Context.Keys | ForEach-Object { "$($t[$_]): $($tab.Context[$_])" }) -join "`n"
+        foreach ($c in @($tab.Head) + $tab.TitleLabels) { $tips.SetToolTip($c, $whole) }
+        Update-TabHead $tab
         Update-FormHeight
     }
 
-    $claudeExe = (Get-Command claude.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-    if (-not $claudeExe) { $claudeExe = Join-Path $HOME '.local\bin\claude.exe' }
-    function Switch-Language([string]$lang) {
-        if ($script:job -or $lang -eq $script:lang) { return }
-        if ($script:translations.ContainsKey($lang)) { Set-Language $lang; return }
-
-        $quote = { param($s) '"' + ($s -replace '"', '\"') + '"' }
-        $schema = '{"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}},"required":["items"]}'
-        $system = "You translate UI text of a question dialog. Input: a JSON array of strings. Translate every string to $(if ($lang -eq 'uk') { 'Ukrainian' } else { 'English' }). " +
-            'Return them in the same order and count. Keep code, identifiers, file names, commands and product names unchanged.'
-        $workDir = Join-Path ([IO.Path]::GetTempPath()) 'claude-ask-dialog'
-        [void](New-Item -ItemType Directory -Force -Path $workDir)
-
-        $psi = New-Object Diagnostics.ProcessStartInfo
-        $psi.FileName = $claudeExe
-        $psi.Arguments = '-p --model haiku --effort low --setting-sources project --strict-mcp-config --tools "" --no-session-persistence ' +
-            "--disable-slash-commands --output-format json --json-schema $(& $quote $schema) --system-prompt $(& $quote $system)"
-        $psi.WorkingDirectory = $workDir
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $psi.RedirectStandardInput = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
-        $psi.EnvironmentVariables.Remove('CLAUDECODE')
-        $psi.EnvironmentVariables['MAX_THINKING_TOKENS'] = '0'  # thinking makes it 4 s -> 20-40 s
-        try {
-            $proc = [Diagnostics.Process]::Start($psi)
-            $stdin = New-Object IO.StreamWriter($proc.StandardInput.BaseStream, [Text.UTF8Encoding]::new($false))
-            $stdin.Write((ConvertTo-Json -InputObject @($script:translations[$origLang]) -Compress))
-            $stdin.Close()
-            $script:job = @{ Lang = $lang; Process = $proc; Output = $proc.StandardOutput.ReadToEndAsync(); Watch = [Diagnostics.Stopwatch]::StartNew() }
-            foreach ($fb in $flags.Values) { $fb.Enabled = $false }
-            Show-Status $ui[$lang].Translating $false
-            $timer.Start()
-        } catch {
-            Show-Status $ui[$script:lang].Failed $true
-        }
-    }
-    function Complete-Translation([string]$raw) {
-        $timer.Stop()
-        $lang = $script:job.Lang
-        $script:job = $null
-        foreach ($fb in $flags.Values) { $fb.Enabled = $true }
-        try {
-            $items = @(($raw | ConvertFrom-Json).structured_output.items)
-            if ($items.Count -ne $script:dyn.Count) { throw 'count mismatch' }
-            $script:translations[$lang] = $items
-            Set-Language $lang
-        } catch {
-            Show-Status $ui[$script:lang].Failed $true
-        }
-    }
-    $timer = New-Object Windows.Forms.Timer
-    $timer.Interval = 250
-    $timer.add_Tick({
-        $job = $script:job
-        if (-not $job) { $timer.Stop(); return }
-        if ($job.Output.IsCompleted) { Complete-Translation $job.Output.Result; return }
-        if ($job.Watch.Elapsed.TotalSeconds -gt 90) { try { $job.Process.Kill() } catch {}; Complete-Translation '' }
+    # The window's close button closes every tab; Esc and Close only the shown one.
+    $form.add_FormClosing({
+        param($sender, $e)
+        if ($e.CloseReason -ne 'UserClosing') { return }
+        $e.Cancel = $true
+        foreach ($tab in @($script:tabs)) { Complete-Tab $tab 'close' }
     })
-    $form.add_FormClosed({ if ($script:job) { try { $script:job.Process.Kill() } catch {} } })
-
-    Set-Language $origLang
-    $form.add_Shown({ $form.Activate(); $submitBtn.Focus() })
+    $form.add_Shown({ $form.Activate(); if ($script:current) { [void]$script:current.Submit.Focus() } })
 
     if ($Auto) {
-        if ($env:ASK_DIALOG_NOTE) { $note.Text = $env:ASK_DIALOG_NOTE + ' ' }
-        if ($env:ASK_DIALOG_IMAGE) { $note.SelectionStart = $note.TextLength; Add-Attachment $env:ASK_DIALOG_IMAGE $false }
-        if ($env:ASK_DIALOG_TRANSLATE) {
-            Switch-Language $env:ASK_DIALOG_TRANSLATE
-            while ($script:job) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }
+        [void](Add-QuestionTab $payload $null)
+        $tab = $script:tabs[0]
+        foreach ($more in @("$env:ASK_DIALOG_MORE" -split ';' | Where-Object { $_ })) {
+            [void](Add-QuestionTab ([IO.File]::ReadAllText($more) | ConvertFrom-Json) $null)
         }
-        [Console]::Error.WriteLine("title: $($form.Text) [$script:lang]")
-        foreach ($key in $script:refCache.Keys) {
-            $r = $script:refCache[$key]
+        if ($env:ASK_DIALOG_NOTE) { $tab.Note.Text = $env:ASK_DIALOG_NOTE + ' ' }
+        if ($env:ASK_DIALOG_IMAGE) { $tab.Note.SelectionStart = $tab.Note.TextLength; Add-Attachment $tab $env:ASK_DIALOG_IMAGE $false }
+        if ($env:ASK_DIALOG_WORD) {
+            # As if held after a double-click on that word in the first question.
+            $box = $tab.Entries[0].Choices[0].Parent.Controls[0]
+            $box.Select($box.Text.IndexOf($env:ASK_DIALOG_WORD), $env:ASK_DIALOG_WORD.Length)
+            Show-WordTranslation @{ Box = $box; Fired = $false }
+            while ($script:wordJobs.Count) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }
+            $key = "$($env:ASK_DIALOG_WORD)|$(Get-Copied $box.Text)"
+            [Console]::Error.WriteLine("word: $($env:ASK_DIALOG_WORD) -> $(if ($script:wordCache.ContainsKey($key)) { $script:wordCache[$key] } else { '(failed)' })")
+        }
+        [Console]::Error.WriteLine("title: $($form.Text) [$($tab.Lang)]")
+        foreach ($t in $script:tabs) {
+            [Console]::Error.WriteLine("tab: $($t.Title) [$($t.Lang)]$(if ($t -eq $tab) { ' (shown)' } elseif (-not $t.Visited) { ' (not opened)' })")
+        }
+        foreach ($key in $tab.RefCache.Keys) {
+            $r = $tab.RefCache[$key]
             [Console]::Error.WriteLine("reference: $key -> $(if ($r) { "$($r.Path):$($r.Line) ($($r.Lines.Count) lines) $($r.Title)" } else { '(not found)' })")
         }
         if ($env:ASK_DIALOG_WHEEL) {
@@ -1335,15 +1647,16 @@ $content
             # one notch down over each kind of control; the question list must scroll, the message box not.
             $form.StartPosition = 'Manual'; $form.Location = New-Object Drawing.Point(0, 0); $form.Opacity = 0.01
             $form.Show(); [Windows.Forms.Application]::DoEvents()
-            $firstInner = $entries[0].Choices[0].Parent
+            $main = $tab.Main
+            $firstInner = $tab.Entries[0].Choices[0].Parent
             $probes = [ordered]@{
                 'question text' = $firstInner.Controls[0]
-                'radio button'  = $entries[0].Choices[0]
+                'radio button'  = $tab.Entries[0].Choices[0]
                 'description'   = @($firstInner.Controls | Where-Object { $_ -is [Windows.Forms.TextBoxBase] -and $_.Multiline })[1]
                 'references'    = @($firstInner.Controls | Where-Object { $_ -is [Windows.Forms.FlowLayoutPanel] })[0]
-                'other field'   = $entries[0].Other
+                'other field'   = $tab.Entries[0].Other
                 'group box'     = $firstInner.Parent
-                'message box'   = $note
+                'message box'   = $tab.Note
             }
             foreach ($name in $probes.Keys) {
                 $c = $probes[$name]
@@ -1355,7 +1668,7 @@ $content
                 [Console]::Error.WriteLine("wheel: $name -> taken=$taken, list scrolled to $(-$main.AutoScrollPosition.Y)")
             }
             # Link hit-testing: the middle of each code finds it; the space after a line's end finds nothing.
-            foreach ($rich in @($script:links.Keys)) {
+            foreach ($rich in @($script:links.Keys | Where-Object { $script:links[$_].Tab -eq $tab })) {
                 foreach ($r in $script:links[$rich].Ranges) {
                     $at = $rich.GetPositionFromCharIndex($r.Start + [int]($r.Length / 2))
                     $hit = Get-LinkAt $rich (New-Object Drawing.Point(($at.X + 2), ($at.Y + 4)))
@@ -1373,7 +1686,7 @@ $content
             $form.DrawToBitmap($bmp, (New-Object Drawing.Rectangle(0, 0, $form.Width, $form.Height)))
             $bmp.SetResolution((96 * $scale), (96 * $scale))
             $sg = [Drawing.Graphics]::FromImage($bmp)
-            $view = $main.RectangleToScreen($main.ClientRectangle)
+            $view = $tab.Main.RectangleToScreen($tab.Main.ClientRectangle)
             foreach ($rich in @($script:links.Keys)) {
                 $on = $rich.RectangleToScreen($rich.ClientRectangle)
                 if (-not $rich.Visible -or -not $view.Contains($on)) { continue }
@@ -1382,7 +1695,7 @@ $content
             }
             $sg.Dispose()
             $bmp.Save($env:ASK_DIALOG_SHOT)
-            $shown = if ($env:ASK_DIALOG_OPEN) { @($script:refCache.Values) | Where-Object { $_ -and $_.Key -eq $env:ASK_DIALOG_OPEN } | Select-Object -First 1 }
+            $shown = if ($env:ASK_DIALOG_OPEN) { @($tab.RefCache.Values) | Where-Object { $_ -and $_.Key -eq $env:ASK_DIALOG_OPEN } | Select-Object -First 1 }
             if ($shown) {
                 # A RichTextBox draws nothing under DrawToBitmap; PrintWindow renders it.
                 Show-Reference $shown
@@ -1407,47 +1720,57 @@ $content
             }
             $form.Hide()
         }
-        $script:mode = $Auto
-    } else {
-        [Media.SystemSounds]::Asterisk.Play()
-        [void]$form.ShowDialog()
-    }
-
-    $noteText = $note.Text.Trim()
-    $imageBlock = ''
-    if ($script:attachments.Count) {
-        $imageBlock = "`n`nAttached images (open each with the Read tool before replying):`n" +
-            (($script:attachments | ForEach-Object { "[Image #$($_.Number)]: $($_.Path)" }) -join "`n")
-    }
-    $noteContext = if ($noteText -or $imageBlock) { "Additional message from the user, written in the question dialog:`n$noteText$imageBlock" } else { '' }
-
-    if ($script:mode -eq 'close') {
-        # Closed without answering: the terminal prompt follows, but the message still reaches Claude.
-        if ($noteContext) {
-            $result = @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; additionalContext = $noteContext } }
-            [Console]::Out.Write((ConvertTo-Json -InputObject $result -Depth 5 -Compress))
-        }
+        Complete-Tab $tab $Auto
         exit 0
     }
 
-    # Answers always use the original question and option texts, whatever language is shown.
-    $answers = [ordered]@{}
-    foreach ($e in $entries) {
-        $labels = @($e.Choices | Where-Object Checked | ForEach-Object { $_.Tag })
-        $typed = $e.Other.Text.Trim()
-        if ($typed) { $labels = if ($e.Question.multiSelect) { $labels + $typed } else { @($typed) } }
-        if ($labels.Count -gt 0) { $answers[$e.Question.question] = $labels -join ', ' }
+    # The window process: takes hook calls from the pipe as tabs, drops the ones whose hook went away,
+    # and ends 5 minutes after its last tab.
+    function Add-RequestTab($request) {
+        try {
+            [void](Add-QuestionTab ($request.Payload | ConvertFrom-Json) $request)
+        } catch {
+            Write-Log "ask-dialog: tab failed: $_"
+            foreach ($broken in @($script:tabs | Where-Object { $_.Request -eq $request })) { Remove-Tab $broken }
+            $request.Reply('')
+            return
+        }
+        if (-not $form.Visible) {
+            # Each showing: at the right of the main screen, 100 px in from its edge, centred top to bottom.
+            $area = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+            $form.Location = New-Object Drawing.Point(($area.Right - (& $px 100) - $form.Width),
+                ($area.Top + [Math]::Max(0, [int](($area.Height - $form.Height) / 2))))
+            $form.Show()
+            # Started hidden, the process's first showing is a hiding; this one shows.
+            [void][ClaudeHook.Native]::ShowWindow($form.Handle, 5)  # SW_SHOW
+            $form.Activate()
+            [void]$script:current.Submit.Focus()
+        }
+        [Media.SystemSounds]::Asterisk.Play()
     }
-
-    if ($keepRecommended.Checked) {
-        Set-KeepRecommendedMark $payload.session_id
-        $keepNote = 'The user ticked Keep Recommended: their later questions in this session are answered with the recommended options without being shown.'
-        $noteContext = if ($noteContext) { "$noteContext`n`n$keepNote" } else { $keepNote }
-    }
-    Write-Answers $toolInput $answers 'Answered in the desktop dialog' $noteContext
+    $server = New-Object ClaudeHook.AskServer($pipeName)
+    $server.Start()
+    $script:idleSince = Get-Date
+    $app = New-Object Windows.Forms.ApplicationContext
+    $poll = New-Object Windows.Forms.Timer
+    $poll.Interval = 200
+    $poll.add_Tick({
+        $request = $null
+        while ($server.Incoming.TryDequeue([ref]$request)) { Add-RequestTab $request }
+        foreach ($tab in @($script:tabs)) { if ($tab.Request.Gone) { Remove-Tab $tab } }
+        if ($script:tabs.Count -eq 0 -and ((Get-Date) - $script:idleSince).TotalMinutes -ge 5) {
+            $poll.Stop()
+            $server.Stop()
+            $app.ExitThread()
+        }
+    })
+    $poll.Start()
+    [Windows.Forms.Application]::Run($app)
+    $lock.ReleaseMutex()
 } catch {
     # Any failure falls back to the normal terminal prompt.
     [Console]::Error.WriteLine("ask-dialog: $_")
+    if ($Serve) { Write-Log "ask-dialog: $_`n$($_.ScriptStackTrace)" }
     exit 0
 }
 exit 0

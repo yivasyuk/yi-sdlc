@@ -55,12 +55,18 @@ function Get-GateApproval($report) {
 }
 
 # Waits, up to an hour, until the agent's turn is over. `panels wait --for ready` doesn't tell: Claude's
-# input box stays on screen while it works.
+# input box stays on screen while it works. `agents status` alone doesn't either: it stays `working`
+# while Claude's footer shows a background shell still running, though the turn has ended. The Pane's
+# `agentState` is the most urgent state of its agent panels, so `ready` there means none is working.
 function Wait-Ready {
     for ($i = 0; $i -lt 720; $i++) {
         $status = (Invoke-Runpane agents status --panel $Panel --limit 1 --json).status
         if ($status -eq 'ready' -or $status -eq 'idle') { return $true }
         if ($status -eq 'exited') { return $false }
+        $panes = Invoke-Runpane panes list --json
+        $state = @($panes.panes) | Where-Object { $_.id -eq $Pane } | ForEach-Object { $_.agentState } |
+            Select-Object -First 1
+        if ($state -eq 'ready') { return $true }
         Start-Sleep -Seconds 5
     }
     return $false
