@@ -13,7 +13,7 @@ The rest of the kit sits next to this file:
 | `workflow.md` (this file) | The flow the three skills share |
 | `tracker/contract.md` | The abstract tracker: column roles, `sdlc-mode`, labels, when a ticket can be taken, which moves the agent makes, and the `tracker.<operation>`s the steps call |
 | `tracker/<adapter>.md` | How the adapter profile § Tracker names (`youtrack`, `jira`, or a file in the repo) carries out each operation |
-| `environment.md` | The interface of the repo's isolated environment script |
+| `environment.md` | The interface of the repo's isolated environment script, which builds around the ticket's Pane worktree |
 
 What differs between repos (the tracker and its mapping, the branch names, the environment script, the
 gates, where tests live, which docs to keep in sync) lives in the repo's **project profile**,
@@ -169,11 +169,61 @@ base branch and `origin/<base>` its remote copy.
 
 ## The isolated environment
 
-`environment.md` is the contract: the repo's script, run by its absolute path in the main clone, with
-`up`, `status`, `restart` and `down`, plus whatever more profile § Environment lists, and the rules for
-working in the worktree. In short: edit only inside the worktree, never touch the operator's checkout or
-dev stack, and respect what profile § Environment says must never happen outside the sandbox. Below,
-`ticket-env.ps1` means the script's absolute path in the main clone.
+Each ticket gets **its own Pane**: Pane creates and owns the worktree and branch, so the work shows up in
+Pane next to the operator's other work, and archiving the Pane removes it. Don't make the worktree
+yourself (`git worktree add`, `EnterWorktree` without a `path`), apart from the one case in § Bring it up
+where Pane can only adopt one.
+Around that worktree, the repo's environment script adds what the app needs to run on its own.
+`environment.md` is its contract: run by its absolute path in the main clone, with `up`, `status`,
+`restart` and `down`, plus whatever more profile § Environment lists, and the rules for working in the
+worktree. In short: edit only inside the worktree, never touch the operator's checkout or dev stack, and
+respect what profile § Environment says must never happen outside the sandbox. Below, `ticket-env.ps1`
+means the script's absolute path in the main clone, and `runpane` is `%USERPROFILE%\.pane\bin\runpane.cmd`
+when it isn't on PATH.
+
+### Bring it up
+
+1. `<main>` is the main clone: the parent of `git rev-parse --path-format=absolute --git-common-dir`
+   (this also holds when the session already runs in a worktree).
+2. **Pane is running:** `runpane repos list --json` answers, and lists `<main>`. When Pane doesn't answer,
+   ask the operator to open it and end your turn; don't fall back to a worktree of your own. When the repo
+   isn't listed, add it: `runpane repos add --path <main> --yes --json`.
+3. **Find the ticket's Pane**, the first that holds:
+   - This session already runs in it: `PANE_SESSION_ID` is set, `git rev-parse --show-toplevel` isn't
+     `<main>`, and `git branch --show-current` is `<branch>` (`/yi-sdlc:process-tickets` starts features
+     this way).
+   - `runpane panes list --repo <main> --json` has a Pane whose `worktreePath` is on `<branch>`
+     (`git -C <worktreePath> branch --show-current`): a re-run.
+   - Neither: **create it.** The Pane's name is `<slug>` for a feature and `<id>-<slug>` for a fix or a
+     change; its tab is a plain shell, since this session does the work:
+
+     ```
+     runpane panes create --repo <main> --name <pane name> --branch <branch> --base-branch origin/<base>
+       --tool-command powershell --title shell --source agent --no-focus --yes --json
+     ```
+
+     `--branch` refuses a branch that exists. When `<branch>` exists already (from a run before Pane, or a
+     ticket that went `blocked`), adopt its checkout instead: the worktree `git worktree list` shows on it,
+     or, when none has it, one you add next to the Pane's others (the `worktreePath` folder of the repo's
+     Panes, `<main>\worktrees\` by default): `git -C <main> worktree add <that folder>\<pane name>
+     <branch>`. Then `runpane panes adopt --repo <main> --path <worktree> --name <pane name>
+     --tool-command powershell --launch --yes --json`.
+4. Keep the Pane's id and `<worktree>` (its `worktreePath`). A new Pane installs and builds first, and may
+   wait in Pane's setup queue: wait until `runpane panes list` no longer shows it `initializing`. In
+   `error`, tell the operator what Pane says and stop.
+5. `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`, and keep the printed JSON.
+
+### Take it down
+
+- **Keeping the work** (a pause, the Blocked exit with work worth keeping): `ticket-env.ps1 down -Issue
+  <id>`. The Pane and its worktree stay, and the re-run finds them (step 3 above).
+- **Done with it** (after the merge, or the Blocked exit with nothing worth keeping): `ticket-env.ps1 down
+  -Issue <id>`, then `runpane panes archive --pane <pane id> --yes --json`, which removes the worktree
+  (and, for an adopted one, add `--remove-worktree`). It refuses when work would be lost (uncommitted
+  changes, commits that are neither pushed nor merged): say what it found rather than `--force`. Then
+  `git -C <main> branch -D <branch>`.
+- **When this session runs inside that Pane**, archiving it would end the session: leave the Pane, and
+  tell the operator to archive it once they are done with it.
 
 ## Get the issue ID
 
@@ -317,8 +367,8 @@ again.
 1. `gh pr merge <number> --squash` (squash-merge, and the remote branch is deleted), unless profile § Commits
    says the repo merges another way.
 2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> merged`.
-3. Run `ticket-env.ps1 down -Issue <id>`, then `git branch -D <branch>` in the main clone (it was
-   squash-merged, so `-d` would refuse).
+3. Take the environment down, done with it (§ The isolated environment): `ticket-env.ps1 down`, archive
+   the Pane, then `git branch -D <branch>` in the main clone (it was squash-merged, so `-d` would refuse).
 4. Tell the operator: merged, the final column, and, if it went to `test`, what to check by hand. Their own
    checkout is untouched; `git pull` on `<base>` picks up the change. In `auto`, this message also carries
    the summary from § Ask to merge and the decisions taken in auto.
@@ -378,8 +428,9 @@ that isn't yours:
    operator can answer "1 yes, 2 the second". Mention what you already checked and tried.
 2. `tracker.move <id> blocked`.
 3. If there's work worth keeping, commit it in the worktree as `<prefix> WIP <what>`, leave it unpushed, and
-   run `ticket-env.ps1 down -Issue <id> -KeepWorktree`. If there's nothing worth keeping (or no environment
-   was brought up yet), run `ticket-env.ps1 down -Issue <id>` and `git branch -D <branch>` when they exist.
+   take the environment down keeping the work (§ The isolated environment). If there's nothing worth
+   keeping, take it down done with it, Pane and branch included, as far as they exist (nothing, when no
+   environment was brought up yet).
 4. Tell the operator in one short message that it's blocked and why. When they answer on the ticket, they
-   run the same command again (the skills take a ticket from `blocked`); `up` reuses the branch and
-   worktree.
+   run the same command again (the skills take a ticket from `blocked`); it finds the ticket's Pane and
+   brings the environment up in it again.

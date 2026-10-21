@@ -20,12 +20,12 @@
       "id": 2,
       "name": "start-ts10-medium",
       "prompt": "Start ts-10 in Pane with implement-feature at medium depth. DRY RUN: don't create anything or touch YouTrack, just print the commands and the full prompt you'd send.",
-      "expected_output": "Confirms ts-10 is ready, a runpane panes create command with --branch feature/ts-10-agent-sessions and --name agent-sessions, and a prompt starting with /yi-sdlc:implement-feature ts-10 medium --stop-at-gates that tells the agent Pane owns the worktree.",
+      "expected_output": "Confirms ts-10 is ready, a runpane panes create command with --branch feature/ts-10-agent-sessions and --name agent-sessions, and a prompt starting with /yi-sdlc:implement-feature ts-10 medium --stop-at-gates that tells the agent it already runs in the ticket's own Pane and worktree.",
       "files": [],
       "assertions": [
         "runpane command uses --branch feature/ts-10-agent-sessions and --name agent-sessions",
         "Prompt starts with /yi-sdlc:implement-feature ts-10 medium",
-        "Prompt tells the agent Pane owns the worktree (skip ticket-env.ps1 and EnterWorktree)",
+        "Prompt tells the agent it already runs in the ticket's own Pane and worktree",
         "Plans to copy the git-ignored .claude/sdlc.local.md into the worktree",
         "Created no Pane, branch or worktree and changed no ticket"
       ]
