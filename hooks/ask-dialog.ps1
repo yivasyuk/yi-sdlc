@@ -3,8 +3,8 @@
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
 #   Submit            - the selected answers; recommended ones are preselected (Enter)
 #   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc)
-#   All As Recommended - ticked on Submit, the session's later questions get their recommended options
-#                       without a window (marks in all-recommended\<session id>, swept after 7 days).
+#   Keep Recommended  - ticked on Submit, the session's later questions get their recommended options
+#                       without a window (marks in keep-recommended\<session id>, swept after 7 days).
 #   UA / GB flags     - translate the window in place (Ukrainian / English) via headless `claude -p`;
 #                       answers are always sent with the original question and option texts.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
@@ -12,7 +12,7 @@
 #                       passed as [Image #n] file paths). Sent as additionalContext with Submit/Close.
 #   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4) a question
 #                       mentions are links under it; a click shows that section beside the window.
-# State (notification-mode, all-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
+# State (notification-mode, keep-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
 # -Auto submit|close builds the window without showing it (for testing); env ASK_DIALOG_TRANSLATE=uk|en
@@ -49,16 +49,16 @@ if ($Mode) {
     exit 0
 }
 
-$allRecommendedDir = Join-Path $dataDir 'all-recommended'
-function Get-AllRecommendedMark([string]$sessionId) {
+$keepRecommendedDir = Join-Path $dataDir 'keep-recommended'
+function Get-KeepRecommendedMark([string]$sessionId) {
     if ($sessionId -notmatch '^[\w-]+$') { return $null }
-    Join-Path $allRecommendedDir $sessionId
+    Join-Path $keepRecommendedDir $sessionId
 }
-function Set-AllRecommendedMark([string]$sessionId) {
-    $mark = Get-AllRecommendedMark $sessionId
+function Set-KeepRecommendedMark([string]$sessionId) {
+    $mark = Get-KeepRecommendedMark $sessionId
     if (-not $mark) { return }
-    [void](New-Item -ItemType Directory -Force -Path $allRecommendedDir)
-    Get-ChildItem -LiteralPath $allRecommendedDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
+    [void](New-Item -ItemType Directory -Force -Path $keepRecommendedDir)
+    Get-ChildItem -LiteralPath $keepRecommendedDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
     [IO.File]::WriteAllText($mark, (Get-Date).ToString('o'))
 }
 
@@ -93,16 +93,16 @@ try {
     # PS 5.1 otherwise serializes some arrays as {"value":[...],"Count":n}.
     Remove-TypeData -TypeName System.Array -ErrorAction SilentlyContinue
 
-    # All As Recommended was ticked earlier in this session: answer without asking, in either mode.
-    $mark = Get-AllRecommendedMark $payload.session_id
+    # Keep Recommended was ticked earlier in this session: answer without asking, in either mode.
+    $mark = Get-KeepRecommendedMark $payload.session_id
     if ($mark -and (Test-Path -LiteralPath $mark)) {
         $answers = [ordered]@{}
         foreach ($q in $questions) {
             $rec = Get-Recommended $q
             if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
         }
-        Write-Answers $toolInput $answers 'Answered with the recommended options (All As Recommended)' (
-            'The user ticked All As Recommended earlier in this session, so these questions were not shown to them: ' +
+        Write-Answers $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
+            'The user ticked Keep Recommended earlier in this session, so these questions were not shown to them: ' +
             'each was answered with its recommended option (the first option when none is marked).')
         exit 0
     }
@@ -181,8 +181,8 @@ namespace ClaudeHook {
             Missing = 'Answer every question ({0} left)'; Translating = 'Translating...'; Failed = 'Translation failed'
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
-            AllRecommended = 'All As Recommended'
-            AllRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
+            KeepRecommended = 'Keep Recommended'
+            KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
             LanguageName = 'English'
         }
         uk = @{
@@ -193,8 +193,8 @@ namespace ClaudeHook {
             Missing = 'Дайте відповідь на всі питання (залишилось {0})'; Translating = 'Перекладаю...'; Failed = 'Не вдалося перекласти'
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
-            AllRecommended = 'Усі як рекомендовано'
-            AllRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
+            KeepRecommended = 'Залишати рекомендовані'
+            KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
             LanguageName = 'Українська'
         }
     }
@@ -1160,7 +1160,7 @@ $content
         }
     })
 
-    # The bottom row: All As Recommended on the left, the buttons (and the status) from the right.
+    # The bottom row: Keep Recommended on the left, the buttons (and the status) from the right.
     $bar = New-Object Windows.Forms.TableLayoutPanel
     $bar.Dock = 'Bottom'
     $bar.AutoSize = $true
@@ -1170,11 +1170,11 @@ $content
     [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
     [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
     $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
-    $allRecommended = New-Object Windows.Forms.CheckBox
-    $allRecommended.AutoSize = $true
-    $allRecommended.Anchor = 'Left'
-    $allRecommended.Checked = [bool]$env:ASK_DIALOG_ALL
-    $bar.Controls.Add($allRecommended, 0, 0)
+    $keepRecommended = New-Object Windows.Forms.CheckBox
+    $keepRecommended.AutoSize = $true
+    $keepRecommended.Anchor = 'Left'
+    $keepRecommended.Checked = [bool]$env:ASK_DIALOG_KEEP
+    $bar.Controls.Add($keepRecommended, 0, 0)
     $buttons = New-Object Windows.Forms.FlowLayoutPanel
     $buttons.FlowDirection = 'RightToLeft'
     $buttons.AutoSize = $true
@@ -1240,8 +1240,8 @@ $content
         $noteLabel.Text = $t.Note
         $submitBtn.Text = $t.Submit
         $closeBtn.Text = $t.Close
-        $allRecommended.Text = $t.AllRecommended
-        $tips.SetToolTip($allRecommended, $t.AllRecommendedTip)
+        $keepRecommended.Text = $t.KeepRecommended
+        $tips.SetToolTip($keepRecommended, $t.KeepRecommendedTip)
         foreach ($code in $flags.Keys) {
             $flags[$code].FlatAppearance.BorderColor = if ($code -eq $lang) { [Drawing.Color]::White } else { $headerColor }
         }
@@ -1435,10 +1435,10 @@ $content
         if ($labels.Count -gt 0) { $answers[$e.Question.question] = $labels -join ', ' }
     }
 
-    if ($allRecommended.Checked) {
-        Set-AllRecommendedMark $payload.session_id
-        $allNote = 'The user ticked All As Recommended: their later questions in this session are answered with the recommended options without being shown.'
-        $noteContext = if ($noteContext) { "$noteContext`n`n$allNote" } else { $allNote }
+    if ($keepRecommended.Checked) {
+        Set-KeepRecommendedMark $payload.session_id
+        $keepNote = 'The user ticked Keep Recommended: their later questions in this session are answered with the recommended options without being shown.'
+        $noteContext = if ($noteContext) { "$noteContext`n`n$keepNote" } else { $keepNote }
     }
     Write-Answers $toolInput $answers 'Answered in the desktop dialog' $noteContext
 } catch {

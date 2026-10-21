@@ -5,7 +5,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 
 | Part | Path | What it does |
 |---|---|---|
-| Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and All As Recommended for the rest of a session. See the script's header. |
+| Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and Keep Recommended for the rest of a session. See the script's header. |
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
 | Hook `SessionStart` | `hooks/language.ps1` | Sets the language every yi-sdlc skill writes in (questions, documents, tracker comments, PRs): `- Language: <name>` in § Language of the repo's `.claude/yi-sdlc/project.md` (the main clone's from a worktree), English by default. It overrides the imported skills' Ukrainian without editing them, so a sync keeps it. |
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
@@ -16,7 +16,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 | Skill `yi-sdlc:git-commit` | `skills/git-commit` | Commit, branch and PR title conventions (feature or ticket prefix). Model-invoked. |
 | Status line | `statusline/statusline.js` | Model, effort, context, branch, 5h/7d limits, cache hit ratio and cost. A plugin can't register a status line, so `~/.claude/settings.json` points at this file (below). |
 
-Hook registrations live in `hooks/hooks.json`. The dialog keeps its state (`notification-mode`, `all-recommended\`)
+Hook registrations live in `hooks/hooks.json`. The dialog keeps its state (`notification-mode`, `keep-recommended\`)
 in the plugin's data dir, `~/.claude/plugins/data/<plugin id>/`, which survives plugin updates.
 
 ## Install
