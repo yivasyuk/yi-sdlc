@@ -1,3 +1,4 @@
 # State ask-dialog.ps1 writes next to itself when run outside the plugin (no plugin data dir)
 /hooks/notification-mode
 /hooks/keep-recommended/
+/hooks/ask-dialog.log

@@ -5,7 +5,7 @@ Yaroslav's user-level Claude Code kit for Windows, packaged as a plugin. The rep
 
 | Part | Path | What it does |
 |---|---|---|
-| Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in a desktop window: recommended answers preselected, UA/GB translation, references, a message field with pasted images, and Keep Recommended for the rest of a session. See the script's header. |
+| Hook `PreToolUse` (`AskUserQuestion`) | `hooks/ask-dialog.ps1` | Answers Claude's questions in one desktop window shared by every session: a tab per question call titled project · feature (a tab not opened yet is highlighted), recommended answers preselected, references, a word's Ukrainian translation on double-click-and-hold, a message field with pasted images, and Keep Recommended for the rest of a session. See the script's header. |
 | Hooks `Notification`, `Stop`, `StopFailure` | `hooks/notify.ps1` | Shows a Windows toast (async). |
 | Hook `SessionStart` | `hooks/language.ps1` | Sets the language every yi-sdlc skill writes in (questions, documents, tracker comments, PRs): `- Language: <name>` in § Language of the repo's `.claude/yi-sdlc/project.md` (the main clone's from a worktree), English by default. It overrides the imported skills' Ukrainian without editing them, so a sync keeps it. |
 | Skills `/yi-sdlc:map-architecture` … `/yi-sdlc:ship-feature`, agents `yi-sdlc:critic`, `yi-sdlc:reviewer`, … | `skills/` (as listed in `sdlc-upstream.json`), `agents/`, `SDLC.md` | The SDLC pipeline from the [sdlc plugin](https://github.com/genkovich/sdlc) by Kyrylo Genkov (MIT, `LICENSE-sdlc`): 21 skills from ideation (`interview`, `write-prd`) through architecture, data model, API contract, tasks and TDD implementation to review and ship, plus 11 agents. Imported unchanged except for the namespace; `SDLC.md` is its README. |
@@ -84,5 +84,7 @@ claude plugin validate C:\Projects\Pet\yi-sdlc
 ```
 
 `hooks/ask-dialog.ps1` must stay UTF-8 with BOM: Windows PowerShell needs it to read its Ukrainian
-strings. `ask-dialog.ps1 -Auto submit|close` builds the dialog without showing it; the header lists the
-`ASK_DIALOG_*` variables for screenshots and translation checks.
+strings. `ask-dialog.ps1 -Auto submit|close` builds the dialog in its own process without showing it; the
+header lists the `ASK_DIALOG_*` variables for screenshots and extra tabs. The shared
+window runs as its own process (`-Serve`, started by the first question, gone 5 minutes after its last
+tab) and logs its failures to `ask-dialog.log` in the plugin's data dir.
