@@ -74,3 +74,5 @@ The ticket's `sdlc-mode` sets how many of those stops happen:
 | `yi-sdlc:roadmap` | Maintain `docs/roadmap.md` |
 | `yi-sdlc:user-documentation` | Write user docs by walking the app's flows |
 | `yi-sdlc:run-application` | Run the app from any worktree, on its own ports |
+| `yi-sdlc:create-tickets` | File roadmap steps as tracker tickets (Epic, Feature or Task by size), linked by the roadmap's dependencies |
+| `yi-sdlc:process-tickets` | Rank the board's ready tickets and start the picks in Pane, a feature per Pane running `implement-feature` |

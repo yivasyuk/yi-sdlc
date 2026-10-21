@@ -1,0 +1,62 @@
+{
+  "skill_name": "process-tickets",
+  "evals": [
+    {
+      "id": 1,
+      "name": "next-up-top5",
+      "prompt": "Check the tasker YouTrack board and tell me what I should work on next, top 5 by priority. DRY RUN: don't create Panes, worktrees or branches and don't change YouTrack; assume I pick #1 and show me exactly what you'd run to start it.",
+      "expected_output": "A ranked table from the live board (features first), notes on stale/blocked items (ts-12 looks done and blocks ts-13), and the exact runpane panes create command + implement-feature prompt for rank 1 (ts-10).",
+      "files": [],
+      "assertions": [
+        "Ranks ts-10 (agent-sessions) as #1",
+        "Does not offer blocked features (ts-11, ts-13, ts-14, ts-15, ts-16) as startable",
+        "Flags ts-12 as done but still open on the board",
+        "Gives a runpane panes create command with --branch feature/ts-10-agent-sessions",
+        "The Pane agent's prompt invokes /yi-sdlc:implement-feature ts-10 (the installed command name)",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "start-ts10-medium",
+      "prompt": "Start ts-10 in Pane with implement-feature at medium depth. DRY RUN: don't create anything or touch YouTrack, just print the commands and the full prompt you'd send.",
+      "expected_output": "Confirms ts-10 is ready, a runpane panes create command with --branch feature/ts-10-agent-sessions and --name agent-sessions, and a prompt starting with /yi-sdlc:implement-feature ts-10 medium --stop-at-gates that tells the agent Pane owns the worktree.",
+      "files": [],
+      "assertions": [
+        "runpane command uses --branch feature/ts-10-agent-sessions and --name agent-sessions",
+        "Prompt starts with /yi-sdlc:implement-feature ts-10 medium",
+        "Prompt tells the agent Pane owns the worktree (skip ticket-env.ps1 and EnterWorktree)",
+        "Plans to copy the git-ignored .claude/sdlc.local.md into the worktree",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "blocked-ts13",
+      "prompt": "Kick off ts-13 (the yi-sdlc flow panel) in its own Pane. DRY RUN: don't create anything or change the board.",
+      "expected_output": "Declines to start ts-13 because ts-10 is open; notes ts-12 is open on the board but looks done (all subtasks resolved), and suggests what to start instead.",
+      "files": [],
+      "assertions": [
+        "Does not start (or green-light starting) ts-13",
+        "Names ts-10 as an open blocker of ts-13",
+        "Identifies ts-12 as done but still open on the board",
+        "Suggests starting ts-10 instead (or as the unblocking step)",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "pane-not-running",
+      "prompt": "Pane isn't open right now (I closed it). What's next on the tasker board? DRY RUN: don't create anything or change the board.",
+      "expected_output": "board.py launches the installed Pane app and waits for it; the report says Pane was started, ranks from the live Pane state (details-panel's Pane is found, so ts-12 is not treated as fresh), lists existing Panes' agent tabs as stopped and offers runpane panels resume without running it.",
+      "files": [],
+      "assertions": [
+        "Runs board.py without --no-start-pane, so Pane is launched",
+        "Says in the report that Pane was started by this run",
+        "Ranking reflects existing Panes (no warning that Pane state is missing)",
+        "Lists the existing Panes' agents as stopped and offers to resume them without resuming any",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
+    }
+  ]
+}
