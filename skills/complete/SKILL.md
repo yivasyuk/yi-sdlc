@@ -1,12 +1,13 @@
 ---
 name: complete
 description: >-
-  Finish the current piece of work in one go: branch off main if needed, commit this session's changes with
-  a message that explains them, push, open a pull request, wait for its builds, and squash-merge it once
+  Finish the current piece of work in one go: branch off main if needed, commit this session's changes
+  (with --force, everything in the working tree, untracked files included) with a message that explains
+  them, push, open a pull request, wait for its builds, and squash-merge it once
   they pass. Operator-only: runs from /yi-sdlc:complete, never on Claude's own initiative. Commit, branch
   and PR wording follow yi-sdlc:git-commit.
 disable-model-invocation: true
-argument-hint: "[commit subject override]"
+argument-hint: "[--force] [commit subject override]"
 ---
 
 # Complete: commit, PR, merge
@@ -17,7 +18,10 @@ stop at the first failure with what broke; never paper over a failure to get the
 Conventions for the branch name, the commit subject and body and the PR title come from
 [`../git-commit/SKILL.md`](../git-commit/SKILL.md). Read it first; the repo profile
 (`.claude/yi-sdlc/project.md` § Commits) wins where it overrides them.
-An argument, when given, is the commit subject to use.
+Arguments, both optional:
+
+- `--force` (or `force`): commit everything in the working tree, not only this session's changes (step 2).
+- Any other text is the commit subject to use.
 
 ## 1. Branch
 
@@ -33,6 +37,18 @@ Stage only what this session changed, by path (`git add -- <paths>`, renames inc
 were already modified or untracked before the session started, and anything unrelated, out of the commit;
 say which ones were left out in the final report. When it is unclear whether a file belongs, ask. Never
 stage secrets (`.env`, keys, credentials).
+
+With `--force`, the operator has already decided that everything goes in: stage every change in the
+working tree, tracked and untracked, including files that predate the session (`git add -A`; `.gitignore`
+still applies). Don't ask about individual files. Two limits stay:
+
+- Secrets: unstage anything that looks like one (`.env`, keys, credentials, tokens) and name it in the
+  report. A leaked secret costs far more than a second commit.
+- Size: unstage single files over ~10 MB (build output, dumps, binaries that `.gitignore` misses) and name
+  them in the report.
+
+Before committing, list what is staged (`git status --short`) and write the commit body to cover all of
+it, not only this session's part.
 
 Nothing to commit and no unpushed commits → stop and say so.
 
