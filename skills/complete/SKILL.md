@@ -15,8 +15,8 @@ The operator runs `/yi-sdlc:complete` and expects the work to land on main. Run 
 stop at the first failure with what broke; never paper over a failure to get the merge through.
 
 Conventions for the branch name, the commit subject and body and the PR title come from
-[`../git-commit/SKILL.md`](../git-commit/SKILL.md). Read it first. A repo profile
-(`.claude/yi-sdlc/project.md` § Commits) or the repo's `AGENTS.md` / `CLAUDE.md` wins where they differ.
+[`../git-commit/SKILL.md`](../git-commit/SKILL.md). Read it first; the repo profile
+(`.claude/yi-sdlc/project.md` § Commits) wins where it overrides them.
 An argument, when given, is the commit subject to use.
 
 ## 1. Branch

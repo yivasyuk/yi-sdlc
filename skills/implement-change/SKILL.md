@@ -144,7 +144,7 @@ Then dispatch **`yi-sdlc:devils-advocate`** (Agent tool, mode A, the ambiguity h
 the ticket text, and limit it to the new and changed ACs. Work through each finding. Tighten the AC when
 the repo docs answer it. Otherwise turn it into a numbered question with your best guess for the stop.
 
-Commit the docs: `<id>: Write the acceptance criteria for <change>`.
+Commit the docs: `<prefix> Write the acceptance criteria for <change>` (workflow § Commits).
 
 ## 6. Stop: approve the acceptance criteria (semi-auto)
 
@@ -153,7 +153,7 @@ In `auto`, approve them yourself, but leave the record the stop would have produ
 1. Go through the open questions. Each one that is critical (workflow § Critical stops in auto) is a
    Blocked exit now, keeping the worktree. Answer every other one with your best guess, tighten the AC to
    match, and add it to the decisions taken in auto.
-2. Commit any AC edits (`<id>: Settle the open questions for <change>`).
+2. Commit any AC edits (`<prefix> Settle the open questions for <change>`).
 3. Post one ticket comment headed **Acceptance criteria (auto-approved)** with the summary below (items →
    AC IDs, changed ACs, items not built, the plan) and the decisions taken so far. It is what the operator
    reads if they want to know what the change was meant to do before the PR shows what it does.
@@ -172,7 +172,7 @@ In `semi-auto`, show the operator, compactly:
 - the open questions, numbered, each with your best guess
 
 Ask: **"Approve these acceptance criteria?"** and wait. If the operator asks for changes, edit the ACs,
-commit (`<id>: Revise the acceptance criteria for <change>`), and ask again. Re-run the ambiguity hunt only
+commit (`<prefix> Revise the acceptance criteria for <change>`), and ask again. Re-run the ambiguity hunt only
 on ACs that changed substantially. If the operator turns it down or wants to think, take the Blocked exit,
 keeping the worktree.
 
@@ -193,7 +193,7 @@ changed snapshot is accepted only when an AC explains its diff.
 ## 8. Implement
 
 Work AC by AC (or in small slices of related ACs): make its tests green, run the unit tests, and commit
-(`<id>: <what this slice adds>`; workflow § Commits). Follow the conventions in profile § Test levels. A
+(`<prefix> <what this slice adds>`; workflow § Commits). Follow the conventions in profile § Test levels. A
 migration you didn't foresee at the stop, or one that isn't additive, is a reason to go back to the
 operator, not to push on. In `auto`, an unforeseen additive migration is a decision to record, not a stop; a
 non-additive one still stops.
@@ -201,7 +201,7 @@ non-additive one still stops.
 When the last slice is green, bring the rest of the docs in line with the code (workflow § Docs sync): the
 `sad.md` flows and trace table, `contracts/openapi.yaml`, `data-model.md`, ADR amendments, the repo-wide
 docs from profile § Docs sync, the `test-plan.md` rows of changed and withdrawn ACs. Run the leftover sweep
-and keep its list of names for the review. Commit `<id>: Bring the docs in line with <change>`.
+and keep its list of names for the review. Commit `<prefix> Bring the docs in line with <change>`.
 
 ## 9. Gates
 
@@ -230,7 +230,7 @@ An AC you can't show working sends you back to step 7 with what you learned.
 If the owning feature has a `CHANGELOG.md` (or `changelog.md`), add a section under its title, newest first,
 in the shape it already uses: `## <id> — <one line>`, then **What**, **Why** (link the ticket and the AC
 IDs), **How to use**, and **Operational notes** (migrations and their rollback, config, anything breaking).
-Keep it to what an operator upgrading would need. Commit `<id>: Record the change in the changelog`.
+Keep it to what an operator upgrading would need. Commit `<prefix> Record the change in the changelog`.
 
 ## 13. Decide whether manual testing is needed
 
