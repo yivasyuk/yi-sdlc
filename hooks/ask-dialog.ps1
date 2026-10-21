@@ -2,8 +2,7 @@
 
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
 #   Submit            - the selected answers; recommended ones are preselected (Enter)
-#   Close             - no output, so Claude Code shows its normal terminal prompt instead
-#   Close To Terminal - same as Close, and switches notification mode to terminal (Esc)
+#   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc)
 #   All As Recommended - ticked on Submit, the session's later questions get their recommended options
 #                       without a window (marks in all-recommended\<session id>, swept after 7 days).
 #   UA / GB flags     - translate the window in place (Ukrainian / English) via headless `claude -p`;
@@ -175,27 +174,25 @@ namespace ClaudeHook {
 
     $ui = @{
         en = @{
-            Title = 'Claude Code needs your answer'; Submit = 'Submit'; ToTerminal = 'Close To Terminal'; Close = 'Close'
+            Title = 'Claude Code needs your answer'; Submit = 'Submit'; Close = 'Close'
             Other = 'Other:'; Project = 'PROJECT'; Branch = 'BRANCH'; Feature = 'FEATURE'
             Note = 'Additional information for Claude (optional; Ctrl+V pastes images; Ctrl+Enter submits):'
             ImageTip = 'Image #{0} - click to remove'
             Missing = 'Answer every question ({0} left)'; Translating = 'Translating...'; Failed = 'Translation failed'
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
-            TerminalTip = 'Close and switch to terminal mode: this and the next questions are asked in the terminal. Switch back with notification-mode desktop in any terminal.'
             AllRecommended = 'All As Recommended'
             AllRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
             LanguageName = 'English'
         }
         uk = @{
-            Title = 'Claude Code чекає на вашу відповідь'; Submit = 'Надіслати'; ToTerminal = 'Закрити в термінал'; Close = 'Закрити'
+            Title = 'Claude Code чекає на вашу відповідь'; Submit = 'Надіслати'; Close = 'Закрити'
             Other = 'Інше:'; Project = 'ПРОЄКТ'; Branch = 'ГІЛКА'; Feature = 'ФІЧА'
             Note = 'Додаткова інформація для Claude (необов''язково; Ctrl+V — вставити зображення; Ctrl+Enter — надіслати):'
             ImageTip = 'Зображення #{0} — клацніть, щоб прибрати'
             Missing = 'Дайте відповідь на всі питання (залишилось {0})'; Translating = 'Перекладаю...'; Failed = 'Не вдалося перекласти'
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
-            TerminalTip = 'Закрити й перейти в режим терміналу: це та наступні питання будуть у терміналі. Повернути вікно: notification-mode desktop у будь-якому терміналі.'
             AllRecommended = 'Усі як рекомендовано'
             AllRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
             LanguageName = 'Українська'
@@ -1192,7 +1189,6 @@ $content
         $b
     }
     $closeBtn = & $mkButton
-    $terminalBtn = & $mkButton
     $submitBtn = & $mkButton
     $status = New-Object Windows.Forms.Label
     $status.AutoSize = $true
@@ -1205,7 +1201,6 @@ $content
 
     $script:mode = 'close'
     $closeBtn.add_Click({ $form.Close() })
-    $terminalBtn.add_Click({ Set-NotificationMode 'terminal'; $form.Close() })
     $submitBtn.add_Click({
         $missing = @($entries | Where-Object { -not ($_.Choices | Where-Object Checked) -and -not $_.Other.Text.Trim() })
         if ($missing.Count -gt 0) { Show-Status ($ui[$script:lang].Missing -f $missing.Count) $true; return }
@@ -1213,7 +1208,7 @@ $content
         $form.Close()
     })
     $form.AcceptButton = $submitBtn
-    $form.CancelButton = $terminalBtn
+    $form.CancelButton = $closeBtn
 
     $form.Controls.Add($main)
     $form.Controls.Add($notePanel)
@@ -1244,9 +1239,7 @@ $content
         foreach ($l in $refCaptions) { $l.Text = $t.References }
         $noteLabel.Text = $t.Note
         $submitBtn.Text = $t.Submit
-        $terminalBtn.Text = $t.ToTerminal
         $closeBtn.Text = $t.Close
-        $tips.SetToolTip($terminalBtn, $t.TerminalTip)
         $allRecommended.Text = $t.AllRecommended
         $tips.SetToolTip($allRecommended, $t.AllRecommendedTip)
         foreach ($code in $flags.Keys) {
