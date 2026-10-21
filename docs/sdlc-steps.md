@@ -38,7 +38,7 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 1. Read the ticket: check its column, check it's a change, read its `sdlc-mode`, find the feature it
    belongs to, and split it into items.
 2. Check it fits one PR. If it doesn't, it moves to the full pipeline.
-3. Bring up the isolated environment.
+3. Bring up the isolated environment: the ticket's own Pane (its worktree and branch), and the repo's environment around it.
 4. Record how each item behaves today.
 5. Write the acceptance criteria into the PRD, then run the ambiguity check (`yi-sdlc:devils-advocate`).
 6. **Stop: the operator approves the acceptance criteria.**
@@ -51,7 +51,7 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 13. Decide whether manual testing is needed.
 14. Open the PR and update the ticket.
 15. **Stop: the operator approves the merge.**
-16. Merge, move the ticket, and take down the environment.
+16. Merge, move the ticket, take down the environment and archive the Pane.
 
 ## SDLC mode
 

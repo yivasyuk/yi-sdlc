@@ -39,12 +39,13 @@ Arguments: `$ARGUMENTS`.
 If `.claude/yi-sdlc/project.md` exists in the main clone, read its § Run (where the script lives, what
 the checkouts share, what must never happen in a worktree) and § Environment (ticket worktrees).
 
-**A ticket worktree** (profile § Environment names the folder the ticket worktrees go to; the worktree's
-folder name is the ticket ID) already has its own isolated environment, with its own database copy. Use it
-rather than starting a second copy: `ticket-env.ps1 status -Issue <id>` by its absolute path in the main
-clone. When it is down and the action is `up`, run `ticket-env.ps1 up -Issue <id> -Branch <its branch>`
-(`restart` and `down` map to the same commands). Its JSON has the URLs (`web`, `api`, …); show those in
-step 4 and check each one with a request first, since that JSON has no `ok`.
+**A ticket worktree** (the ticket kit's: a Pane worktree whose branch follows a profile § Branches
+pattern, so the ticket ID is the `{id}` in it) already has its own isolated environment, with its own
+database copy. Use it rather than starting a second copy: `ticket-env.ps1 status -Issue <id>` by its
+absolute path in the main clone. When it is down and the action is `up`, run `ticket-env.ps1 up -Issue
+<id> -Worktree <the checkout>` (`restart` and `down` map to the same commands). Its JSON has the URLs
+(`web`, `api`, …); show those in step 4 and check each one with a request first, since that JSON has no
+`ok`.
 
 Its JSON doesn't say whether the backend runs the branch's current code either, and a backend that doesn't
 hot-reload often doesn't: the session committed after the environment came up. Compare the start time of

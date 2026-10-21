@@ -2,7 +2,7 @@
 name: implement-change
 description: >-
   Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
-  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own worktree): check
+  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own Pane and worktree): check
   it fits one PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
   review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back on the
   ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
@@ -101,8 +101,9 @@ Otherwise `tracker.move <id> in-progress`.
 
 ## 3. Bring up the environment
 
-`ticket-env.ps1 up -Issue <id> -Branch <branch>` (step 1.5; workflow § The isolated environment). Keep the
-printed JSON.
+Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
+is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
+the printed JSON.
 
 ## 4. Record today's behaviour
 

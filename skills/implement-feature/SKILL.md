@@ -2,7 +2,7 @@
 name: implement-feature
 description: >-
   Build a feature ticket (YouTrack, Jira, or any tracker the repo's profile maps) through the whole SDLC
-  pipeline in an isolated environment (its own worktree): take an optional feature name, then run yi-sdlc:interview,
+  pipeline in an isolated environment (its own Pane and worktree): take an optional feature name, then run yi-sdlc:interview,
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
@@ -104,15 +104,15 @@ On a re-run, these are in the **Feature pipeline** comment and the branch name: 
 
 ## 3. Bring up the environment and enter it
 
-1. Note the main clone's root (`git rev-parse --show-toplevel`) as `<main>`, and run the environment
-   script from profile § Environment by its absolute path under `<main>` (`environment.md` says why).
-2. `tracker.move <id> in-progress`.
-3. `ticket-env.ps1 up -Issue <id> -Branch <branch>`. Keep the printed JSON. On a re-run, `up` reuses the
-   branch and worktree and restarts what isn't running.
-4. **Enter the worktree:** `EnterWorktree` with `path` = the printed `worktree`. The `yi-sdlc:*` stages write
-   `docs/features/<slug>/…` and run git relative to the working directory, so the session itself has to
-   be in the worktree, not only your own edits. Check with `git branch --show-current`.
-5. Copy `<main>\.claude\sdlc.local.md` into the worktree's `.claude\` if it exists and isn't there. It is
+1. `tracker.move <id> in-progress`.
+2. Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>`, named `<slug>`,
+   then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and the printed JSON. On a
+   re-run it finds the same Pane, and `up` restarts what isn't running.
+3. **Enter the worktree**, unless this session already runs in it (started in the ticket's Pane):
+   `EnterWorktree` with `path` = `<worktree>`. The `yi-sdlc:*` stages write `docs/features/<slug>/…` and run
+   git relative to the working directory, so the session itself has to be in the worktree, not only your
+   own edits. Check with `git branch --show-current`.
+4. Copy `<main>\.claude\sdlc.local.md` into the worktree's `.claude\` if it exists and isn't there. It is
    git-ignored, so the worktree doesn't have it, and without it the stages fall back to plugin defaults
    (integration tests, models, commit settings) that aren't the operator's.
 
@@ -189,10 +189,10 @@ stage itself picks up from what is on disk.
   Blocked exit with the open findings.
 - The operator wants to stop for now (to think, or to answer later) → **pause**, not `blocked`: commit
   what is worth keeping (`<prefix> WIP <what>`), note the open question in the **Feature pipeline**
-  comment, `ExitWorktree` with `keep`, and `ticket-env.ps1 down -Issue <id> -KeepWorktree`. The ticket
-  stays `in-progress`. Re-running the command picks up there.
+  comment, `ExitWorktree` with `keep` (when step 3 entered it), and `ticket-env.ps1 down -Issue <id>`; the
+  Pane stays. The ticket stays `in-progress`. Re-running the command picks up there.
 - Anything workflow § Blocked exit covers (the ticket isn't workable, a decision isn't yours) → that exit,
-  with `ExitWorktree` `keep` before its `down`.
+  with `ExitWorktree` `keep` (when step 3 entered it) before its `down`.
 
 ## 6. The gates
 
@@ -277,6 +277,7 @@ those are what's hardest to undo after the merge.
 
 ## 11. After approval
 
-Workflow § After approval, with one step first: `ExitWorktree` with `keep` (the session goes back to the
-main clone; `down` removes the worktree itself). Then the merge, the board move, `ticket-env.ps1 down -Issue
-<id>`, `git branch -D <branch>`. The `ship-feature` roadmap move is already in the merged PR.
+Workflow § After approval, with one step first when step 3 entered the worktree: `ExitWorktree` with
+`keep` (the session goes back to the main clone; archiving the Pane removes the worktree). Then the merge,
+the board move, `ticket-env.ps1 down -Issue <id>`, archiving the Pane (not when this session runs in it),
+`git branch -D <branch>`. The `ship-feature` roadmap move is already in the merged PR.

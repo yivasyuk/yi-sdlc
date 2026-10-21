@@ -71,6 +71,6 @@ On failure: exit 1, and print to stderr which part failed and the tail of its lo
   checkout gets untracked files and `list` can find every instance.
 - **Detached.** The started processes outlive the call, and none inherits the script's output handles; a
   caller reading the JSON through a pipe would otherwise wait for the servers to exit.
-- **Ticket worktrees** made by `ticket-env.ps1` (the ticket kit's `environment.md`) already run in their own
-  isolated environment. `/yi-sdlc:run-application` asks `ticket-env.ps1` for those; this script doesn't
+- **Ticket worktrees** (the ticket kit's Pane worktrees, with an environment from `ticket-env.ps1`; its
+  `environment.md`) already run in their own isolated environment. `/yi-sdlc:run-application` asks `ticket-env.ps1` for those; this script doesn't
   need to handle them.

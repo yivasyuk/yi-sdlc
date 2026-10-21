@@ -2,7 +2,7 @@
 name: implement-fix
 description: >-
   Fix a defect ticket (YouTrack, Jira, or any tracker the repo's profile maps) end to end by its ID in an
-  isolated environment (its own worktree): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
+  isolated environment (its own Pane and worktree): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
   yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the operator
   approves. The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
   without asking, stops only on critical issues), semi-auto (asks before merging) or developer, the
@@ -62,8 +62,9 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
 
 ## 2. Bring up the environment
 
-`ticket-env.ps1 up -Issue <id> -Branch <branch>` (step 1.5; workflow § The isolated environment). Keep the
-printed JSON.
+Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
+is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
+the printed JSON.
 
 ## 3. Reproduce on the running app
 

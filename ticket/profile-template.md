@@ -91,8 +91,9 @@ The repo's own script, implementing `environment.md` (the plugin has no environm
 - More commands: <e.g. `e2e -Issue <id>`: the end-to-end tests against the isolated environment; leave out
   when none>.
 - The operator's dev stack, never touched: <ports, database, checkout>.
-- What `up` gives the worktree: <its own database copy, app processes on free ports, …>. Worktrees go to
-  `<path>\<id>`. What `restart` does: <rebuilds and restarts …, applies migrations>.
+- What `up` gives the ticket's Pane worktree: <its own database copy, app processes on free ports, …>.
+  Where it keeps its state: <path outside the worktree>. What `restart` does: <rebuilds and restarts …,
+  applies migrations>.
 - The JSON `up` prints: <key → meaning, e.g. `api`, `web`, `apiJson` (the Api's JSON log)>.
 - Outside reach: <live services the isolated app still calls, and what must never happen there (orders,
   real accounts, paid calls)>.

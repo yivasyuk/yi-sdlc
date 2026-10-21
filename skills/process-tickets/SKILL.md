@@ -152,25 +152,21 @@ text, then stop. Otherwise:
 
 ### A feature: a new Pane running implement-feature
 
-`/yi-sdlc:implement-feature` can't be invoked by you (it has `disable-model-invocation`), and it doesn't know
-about Pane: it would bring up a `ticket-env.ps1` worktree. So the Pane agent
-gets it as its first typed command, with a note that the Pane already is its isolated environment.
+`/yi-sdlc:implement-feature` can't be invoked by you (it has `disable-model-invocation`), so the Pane agent
+gets it as its first typed command. It recognises the Pane it runs in as the ticket's (by the branch) and
+brings up `ticket-env.ps1` around that worktree; the note only passes on what this skill already settled.
 
 1. Write the prompt to `$env:TEMP\process-tickets\<id>.md`:
 
    ```
    /yi-sdlc:implement-feature <id> <depth> --stop-at-gates
 
-   Started by /yi-sdlc:process-tickets in its own Pane, which is this ticket's isolated environment: you already
-   run in its worktree <worktree> on branch <branch>, made from main. The main clone is <main>.
+   Started by /yi-sdlc:process-tickets in this ticket's own Pane: you already run in its worktree <worktree>
+   on branch <branch>, made from main. The main clone is <main>.
    - The feature name is chosen: <slug>. Don't ask for it in step 2; your slug, commit prefix and branch
      follow from it.
    - The board already has this feature's tasks: <open subtask IDs>. At break-tasks, map tasks.json
      entries onto them (its `ticket` field) and create tickets only for tasks they don't cover.
-   - In step 3, skip ticket-env.ps1 and EnterWorktree/ExitWorktree (Pane owns the worktree); still move
-     the ticket to In Progress and copy <main>\.claude\sdlc.local.md here if it is missing. Wherever a
-     later step says `ticket-env.ps1 down` or removing the worktree, skip that and tell the operator to
-     archive this Pane instead.
    ```
 
    Fill the angle-bracket values; `<open subtask IDs>` is the candidate's `tasks` (drop that line when
