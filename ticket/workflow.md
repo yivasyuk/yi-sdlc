@@ -14,7 +14,6 @@ The rest of the kit sits next to this file:
 | `tracker/contract.md` | The abstract tracker: column roles, `sdlc-mode`, labels, when a ticket can be taken, which moves the agent makes, and the `tracker.<operation>`s the steps call |
 | `tracker/<adapter>.md` | How the adapter profile § Tracker names (`youtrack`, `jira`, or a file in the repo) carries out each operation |
 | `environment.md` | The interface of the repo's isolated environment script |
-| `launcher.md` | Where the ticket's session runs: its own Rider tab, or here when that isn't possible |
 
 What differs between repos (the tracker and its mapping, the branch names, the environment script, the
 gates, where tests live, which docs to keep in sync) lives in the repo's **project profile**,
@@ -176,15 +175,9 @@ working in the worktree. In short: edit only inside the worktree, never touch th
 dev stack, and respect what profile § Environment says must never happen outside the sandbox. Below,
 `ticket-env.ps1` means the script's absolute path in the main clone.
 
-Where the session runs, in its own Rider tab or here, is `launcher.md`. Your skill says when to launch:
-after step 1's reads and checks, before the ticket moves to `in-progress`. In a tab session, read
-launcher.md § In the tab session first: it changes where `<main>` and `<branch>` come from and how `down`
-runs.
-
 ## Get the issue ID
 
-The issue ID is mandatory. Which ticket to work on is the operator's choice, never yours. A `--here` among
-the arguments isn't part of it: it is for `launcher.md`, and the launch prompt leaves it out.
+The issue ID is mandatory. Which ticket to work on is the operator's choice, never yours.
 
 - An ID matching profile § Tracker `id_pattern`, or one its normalization rules cover (another case, an old
   prefix, a bare number): normalize it and use it.
@@ -325,7 +318,7 @@ again.
    says the repo merges another way.
 2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> merged`.
 3. Run `ticket-env.ps1 down -Issue <id>`, then `git branch -D <branch>` in the main clone (it was
-   squash-merged, so `-d` would refuse). A tab session does this as launcher.md § In the tab session says.
+   squash-merged, so `-d` would refuse).
 4. Tell the operator: merged, the final column, and, if it went to `test`, what to check by hand. Their own
    checkout is untouched; `git pull` on `<base>` picks up the change. In `auto`, this message also carries
    the summary from § Ask to merge and the decisions taken in auto.

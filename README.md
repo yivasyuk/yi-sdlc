@@ -52,12 +52,11 @@ Everything generic about ticket work lives in `ticket/`; what is particular to a
 | `tracker/contract.md` | The abstract tracker: column roles (`in-progress`, `blocked`, `merged`, and optionally `in-review` and `test`), which tickets can be taken and which moves the agent makes (forward along the board's order, or to `blocked`), how `sdlc-mode` is read (default `developer`), the `manual-qa` label, and the `tracker.<operation>`s |
 | `tracker/youtrack.md`, `tracker/jira.md` | Adapters: setting up the tracker's MCP server (YouTrack MCP; Atlassian Rovo MCP, v2 and v1) and which of its tools carries out each operation |
 | `environment.md` | The interface a repo's isolated environment script implements (`up`, `status`, `restart`, `down`); the plugin has no environment code |
-| `launcher.md`, `scripts/rider-tab.ps1` | Each ticket in its own Rider terminal tab, so several run in parallel; when a tab can't open (no `rider` MCP server, the project not open, any launch error), the run carries on in the invoking session |
 | `profile-template.md` | The template for a repo's profile |
 
 | Repo (`.claude/yi-sdlc/`) | What it holds |
 |---|---|
-| `project.md` | The profile: the language the skills write in (default English), the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, the launcher, live checks, test levels, gates, docs to keep in sync |
+| `project.md` | The profile: the language the skills write in (default English), the tracker mapping (adapter, MCP server, account, the board's columns in order with their roles, where `sdlc-mode` lives: a field and/or tags), branch patterns, the environment, live checks, test levels, gates, docs to keep in sync |
 | `ticket-env.ps1` | The repo's own isolated environment |
 | `run-app.ps1` | Optional: how `/yi-sdlc:run-application` starts the app from any checkout |
 

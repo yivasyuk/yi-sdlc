@@ -2,9 +2,8 @@
 name: implement-change
 description: >-
   Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
-  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own worktree, in a
-  Rider terminal tab named after it, or in this session when no tab can open): check it fits one PR, write
-  it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
+  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own worktree): check
+  it fits one PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
   review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back on the
   ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
   sets the autonomy: auto (self-approves the ACs and merges, stops only on critical issues), semi-auto
@@ -12,7 +11,7 @@ description: >-
   Defects go to /yi-sdlc:implement-fix; work too big for one PR goes to
   /yi-sdlc:implement-feature (the full SDLC pipeline). Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <ticket-id, required> [--here]
+argument-hint: <ticket-id, required>
 model: opus
 effort: xhigh
 ---
@@ -36,7 +35,7 @@ turns the run into a brief plus an interactive session.
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
-and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
+and the profile's adapter, `environment.md`).** The workflow holds what this skill shares
 with `/yi-sdlc:implement-fix`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
 gates, commits, review, PR, merge, ticket comments and the Blocked exit. The profile holds what is
 particular to this repo. The steps below point into them as "workflow § <section>" and "profile
@@ -65,9 +64,7 @@ normalized ID.
    wait for the operator from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
 5. `<branch>` is profile § Branches `change` (e.g. `change/<id>-chart-enhancements`; workflow
-   § Branches). Then `launcher.md`: open the ticket in its own tab and end, or carry on here when it says
-   so or the tab can't open. The tab session runs the step 2 size check, so a ticket that graduates is
-   caught there, and its Blocked exit takes down the environment the launcher brought up.
+   § Branches).
 6. Find the **owning feature**: the `docs/features/<slug>/` whose PRD covers the area the ticket touches
    (the screen, capability or flow). Read its PRD (§1 decision overrides, §3 non-goals, §5 acceptance
    criteria, §8 open questions; a feature that went the standard route has `spec.md` instead, with the same

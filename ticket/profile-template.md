@@ -6,7 +6,7 @@ it point into it as "profile § <section>", so keep the headings. Write facts th
 (commands, paths, ports, names), not advice.
 
 The plugin holds everything tracker- and IDE-generic (the tracker contract and its YouTrack and Jira
-adapters, the workflow, the launcher). This file holds only what is particular to the repo, and the
+adapters, the workflow). This file holds only what is particular to the repo, and the
 environment script next to it is the repo's own.
 
 ## Language
@@ -108,17 +108,6 @@ on ports of its own and answers with the links. Its interface: the plugin's `ski
 - Links: <name → URL, e.g. Web `/`, API docs `/swagger`>.
 - What the checkouts share, and what must never happen from a worktree: <e.g. the dev database; the Api
   applies no migrations in a worktree>.
-
-## Launcher
-
-Optional: without this section, each ticket tries its own Rider tab and falls back to the invoking session
-(`launcher.md`).
-
-- Launcher: `rider` (or `here`: every ticket runs in the session that invoked the skill).
-- Setup: <PowerShell run in the tab before Claude starts, e.g. `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'`;
-  leave out when none>.
-- Claude arguments: <extra `claude` flags for the tab session, e.g. `--permission-mode auto`; leave out when
-  none>.
 
 ## Live check
 

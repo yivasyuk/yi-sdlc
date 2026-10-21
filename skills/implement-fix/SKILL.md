@@ -2,8 +2,7 @@
 name: implement-fix
 description: >-
   Fix a defect ticket (YouTrack, Jira, or any tracker the repo's profile maps) end to end by its ID in an
-  isolated environment (its own worktree, in a Rider terminal tab named after it, or in this session when
-  no tab can open): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
+  isolated environment (its own worktree): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
   yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the operator
   approves. The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
   without asking, stops only on critical issues), semi-auto (asks before merging) or developer, the
@@ -11,7 +10,7 @@ description: >-
   already promise. New or changed behaviour goes to /yi-sdlc:implement-change. Needs the repo's
   .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <ticket-id, required> [--here]
+argument-hint: <ticket-id, required>
 model: opus
 effort: xhigh
 ---
@@ -31,7 +30,7 @@ an interactive session.
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
-and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
+and the profile's adapter, `environment.md`).** The workflow holds what this skill shares
 with `/yi-sdlc:implement-change`: the tracker, the SDLC mode, branches, the isolated environment, test levels,
 gates, commits, review, PR, merge, ticket comments and the Blocked exit. The profile holds what is
 particular to this repo. The steps below point into them as "workflow § <section>" and "profile
@@ -53,9 +52,7 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
    follow workflow § Developer mode instead of sub-steps 7–8 and the steps after them. In `auto`, a question
    that would block from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
-5. `<branch>` is profile § Branches `fix` (e.g. `fix/<id>-fill-gaps-error`; workflow § Branches). Then
-   `launcher.md`: open the ticket in its own tab and end, or carry on here when it says so or the tab
-   can't open.
+5. `<branch>` is profile § Branches `fix` (e.g. `fix/<id>-fill-gaps-error`; workflow § Branches).
 6. Find where the problem lives: the architecture map and ADRs (profile § Docs), and the feature's own docs
    (`docs/features/<slug>/PRD.md` acceptance criteria, or `spec.md` on a feature that went the standard
    route; `design-spec.md`). Those say what "correct" means. Then read the code.

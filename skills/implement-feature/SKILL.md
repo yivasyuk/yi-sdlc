@@ -2,8 +2,7 @@
 name: implement-feature
 description: >-
   Build a feature ticket (YouTrack, Jira, or any tracker the repo's profile maps) through the whole SDLC
-  pipeline in an isolated environment (its own worktree, in a Rider terminal tab named after it, or in this
-  session when no tab can open): take an optional feature name, then run yi-sdlc:interview,
+  pipeline in an isolated environment (its own worktree): take an optional feature name, then run yi-sdlc:interview,
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
@@ -12,7 +11,7 @@ description: >-
   one PR; defects go to /yi-sdlc:implement-fix, one-PR changes to /yi-sdlc:implement-change.
   Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
-argument-hint: <ticket-id, required> [easy|medium|hard] [--here] [--stop-at-gates]
+argument-hint: <ticket-id, required> [easy|medium|hard] [--stop-at-gates]
 model: opus
 effort: xhigh
 ---
@@ -40,7 +39,7 @@ including the `developer` default. If the ticket sets a mode, say so in one line
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
-and the profile's adapter, `environment.md`, `launcher.md`).** The workflow holds what this skill shares
+and the profile's adapter, `environment.md`).** The workflow holds what this skill shares
 with `/yi-sdlc:implement-fix` and `/yi-sdlc:implement-change`: the tracker, branches, the isolated
 environment, gates, PR, merge, ticket comments and the Blocked exit. The profile holds what is particular to this repo. The
 steps below point into them as "workflow § <section>" and "profile § <section>". Workflow § SDLC mode and
@@ -57,8 +56,8 @@ The arguments are: `$ARGUMENTS`.
   `--depth=<level>`. Missing means **`easy`**. Anything else: ask once which of the three they meant. Below,
   `<depth>` is the level.
 - **`--stop-at-gates`** (optional): end the session's turn after each approved gate instead of going on to
-  the next stage, so it can be cleared and the command re-run with a fresh context (step 6). A launcher
-  that clears and resumes the session for the operator, such as a Pane watcher, passes it.
+  the next stage, so it can be cleared and the command re-run with a fresh context (step 6). Whatever
+  clears and resumes the session for the operator, such as a Pane watcher, passes it.
 
 `<depth>` is the SDLC depth dial (`interview_depth`): it sets how many questions the Q&A stages ask and
 which analyses they run, never what they cover. `easy` decides the reversible calls with defaults and
@@ -76,7 +75,7 @@ command, so every stage gets `--depth=<depth>` and doesn't ask for the level aga
    - A change to an existing feature that clearly fits one PR (none of the `/yi-sdlc:implement-change`
      step 2 graduation criteria holds) → say so and ask **"This looks like one PR. Run
      `/yi-sdlc:implement-change <id>` instead, or go through the full pipeline anyway?"** The full pipeline isn't wrong for it, only heavier,
-     and the operator may want the PRD and SAD. The tab session doesn't ask again: the launcher did.
+     and the operator may want the PRD and SAD.
    - A ticket `/yi-sdlc:implement-change` graduated (its Blocked comment proposed a slug) is a feature:
      offer that slug first in step 2.
 4. Read enough to know where the feature lands: the roadmap, the architecture map and the product brief
@@ -101,19 +100,11 @@ patterns; profile § Branches `feature` and `feature-unnamed` may differ):
 
 `<prefix>`, the commit and PR title subject prefix, is what `/yi-sdlc:git-commit` gives for `<branch>`.
 
-On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again. In the tab
-session (`launcher.md` § In the tab session), the launcher already asked: `<branch>` is
-`$env:YI_SDLC_BRANCH`, and `<slug>` is what `{slug}` matches in the `feature` pattern (`<id>` when it
-matches `feature-unnamed`).
-
-Then `launcher.md`: open the feature in its own tab, titled `<slug>`, and end, or carry on here when it
-says so or the tab can't open. Pass `<depth>` (and `--stop-at-gates` when given) on in the prompt
-(`/yi-sdlc:implement-feature <id> <depth>`), so the tab session doesn't ask for it.
+On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again.
 
 ## 3. Bring up the environment and enter it
 
-1. Note the main clone's root (`git rev-parse --show-toplevel`; in the tab session `$env:YI_SDLC_MAIN`, and
-   sub-steps 4–5 are already done, `launcher.md` § In the tab session) as `<main>`, and run the environment
+1. Note the main clone's root (`git rev-parse --show-toplevel`) as `<main>`, and run the environment
    script from profile § Environment by its absolute path under `<main>` (`environment.md` says why).
 2. `tracker.move <id> in-progress`.
 3. `ticket-env.ps1 up -Issue <id> -Branch <branch>`. Keep the printed JSON. On a re-run, `up` reuses the
