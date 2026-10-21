@@ -258,16 +258,8 @@ noise.
 
 ## Commits
 
-Ticket work uses the **ticket ID** as the subject prefix, not the `<feature-name>:` from `/yi-sdlc:git-commit`:
-
-```
-<id>: Stop fill gaps from failing on an empty range
-
-<what changed and why, wrapped at ~72 chars; mention migrations and
-contract changes>
-```
-
-Use the present tense and make one logical change per commit.
+Commit subjects, bodies and PR titles follow `/yi-sdlc:git-commit` (profile § Commits may override it).
+Below, `<prefix>` is the subject prefix it gives for `<branch>`, colon included.
 
 ## Review
 
@@ -283,7 +275,7 @@ Then act on its findings without asking the operator. They asked you to accept t
 - **Defer** findings that are large or out of scope (a redesign, another capability, anything that would
   need an ADR). List them as follow-ups.
 
-Re-run the gates and commit `<id>: Address review findings`. Run one review round. Run a second only if the
+Re-run the gates and commit `<prefix> Address review findings`. Run one review round. Run a second only if the
 first found a correctness problem in the change itself.
 
 ## Manual testing
@@ -297,7 +289,7 @@ after the merge.
 ## PR and ticket update
 
 1. `git push -u origin <branch>` (from the worktree).
-2. `gh pr create --base <base> --title "<id>: <summary>" --body "<body>"`. The body links the ticket URL and
+2. `gh pr create --base <base> --title "<prefix> <summary>" --body "<body>"`. The body links the ticket URL and
    holds what your skill lists for it, plus the tests, migrations or contract changes, deferred review items,
    and the manual scenarios if they're needed. In `auto`, add the mode and the decisions taken in auto. End
    it with the attribution line from the session's git instructions.
@@ -392,7 +384,7 @@ that isn't yours:
 1. `tracker.comment` with what you found and **numbered questions**, each with your best guess, so the
    operator can answer "1 yes, 2 the second". Mention what you already checked and tried.
 2. `tracker.move <id> blocked`.
-3. If there's work worth keeping, commit it in the worktree as `<id>: WIP <what>`, leave it unpushed, and
+3. If there's work worth keeping, commit it in the worktree as `<prefix> WIP <what>`, leave it unpushed, and
    run `ticket-env.ps1 down -Issue <id> -KeepWorktree`. If there's nothing worth keeping (or no environment
    was brought up yet), run `ticket-env.ps1 down -Issue <id>` and `git branch -D <branch>` when they exist.
 4. Tell the operator in one short message that it's blocked and why. When they answer on the ticket, they

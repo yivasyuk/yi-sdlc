@@ -88,17 +88,15 @@ Suggest **two or three kebab-case names** from the ticket, in the style of the e
 called?"** with the suggestions as options plus **"No name — use `<id>`"**, and wait. The operator can also
 type their own.
 
-This sets `<slug>`, `<prefix>` and `<branch>` for the rest of the run (the branches with the default
+This sets `<slug>` and `<branch>` for the rest of the run (the branches with the default
 patterns; profile § Branches `feature` and `feature-unnamed` may differ):
 
 | | Named (e.g. `strategy-configurator`) | No name |
 |---|---|---|
 | `<slug>`: the `docs/features/` folder and the stages' argument | `strategy-configurator` | `<id>` |
-| `<prefix>`: commit and PR title subject | `strategy-configurator:` | `<id>:` |
 | `<branch>` | `feature`: `feature/<id>-strategy-configurator` | `feature-unnamed`: `feature/<id>` |
 
-A named feature keeps the feature convention (`/yi-sdlc:git-commit`), so its history reads like the
-features before it; without a name it is ticket work and uses the ticket ID, as `/yi-sdlc:implement-fix` does.
+`<prefix>`, the commit and PR title subject prefix, is what `/yi-sdlc:git-commit` gives for `<branch>`.
 
 On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again. In the tab
 session (`launcher.md` § In the tab session), the launcher already asked: `<branch>` is

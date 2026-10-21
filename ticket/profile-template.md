@@ -154,7 +154,8 @@ Generated files the build rewrites, and which diffs in them are noise: <…>.
 
 ## Commits
 
-- Feature commits use `<feature-name>:`; foundation work uses <`scaffold:` / …>.
+- Commit naming follows `/yi-sdlc:git-commit`; list only what this repo changes. Foundation work uses
+  <`scaffold:` / …>; overrides: <none>.
 - `<base>` is protected; merges are <squash>; CI: <workflows>.
 
 ## Manual testing

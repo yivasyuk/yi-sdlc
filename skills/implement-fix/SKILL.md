@@ -115,7 +115,7 @@ Workflow § Gates.
 
 ## 7. Commit
 
-Workflow § Commits, e.g. `<id>: Stop fill gaps from failing on an empty range`.
+Workflow § Commits.
 
 ## 8. Review
 
