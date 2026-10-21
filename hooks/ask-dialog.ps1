@@ -1,4 +1,4 @@
-﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '', [switch]$Serve, [string]$Pipe = '')
+﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '', [switch]$Serve, [string]$Pipe = '', [switch]$SessionStart)
 
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
 #   One window        - every session's questions share one window, a tab per question call titled
@@ -12,6 +12,7 @@
 #                       shown tab; the window's own close button closes every tab.
 #   Keep Recommended  - ticked on Submit, the session's later questions get their recommended options
 #                       without a window (marks in keep-recommended\<session id>, swept after 7 days).
+#                       /clear starts a new session id; the -SessionStart hook carries the mark over to it.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
 #                       Double-click a word and keep the button down: its Ukrainian translation (headless
 #                       `claude -p`, Haiku) shows beside the pointer.
@@ -22,6 +23,8 @@
 # State (notification-mode, keep-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
+# -SessionStart is the SessionStart hook: it records each session per Claude process and, on a /clear, copies
+# the cleared session's Keep Recommended mark to the new one.
 # -Auto submit|close builds the window in this process without showing it (for testing); env
 # ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
 # ASK_DIALOG_WORD=<word> translates that word of the first question as if held after a double-click, ASK_DIALOG_MORE=<payload.json>;... adds more tabs (not opened)
@@ -68,6 +71,43 @@ function Set-KeepRecommendedMark([string]$sessionId) {
     [void](New-Item -ItemType Directory -Force -Path $keepRecommendedDir)
     Get-ChildItem -LiteralPath $keepRecommendedDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
     [IO.File]::WriteAllText($mark, (Get-Date).ToString('o'))
+}
+
+# The Claude Code process this hook runs under, as "<pid>-<start ticks>" so a reused PID gets a new key.
+# It stays the same across /clear, while the session id changes.
+function Get-ClaudeProcessKey {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+    for ($i = 0; $p -and $i -lt 10; $i++) {
+        if ($p.Name -match '^(claude|node|bun)\.exe$') {
+            return '{0}-{1}' -f $p.ProcessId, $p.CreationDate.ToUniversalTime().Ticks
+        }
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
+    }
+    $null
+}
+
+# The SessionStart hook: every start records its session id per Claude process (keep-recommended\sessions\
+# <process key>). On a /clear, the id recorded before it is the session just cleared, and a Keep Recommended
+# mark it had is copied to the new session.
+if ($SessionStart) {
+    try {
+        $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
+        $key = Get-ClaudeProcessKey
+        if ($key -and (Get-KeepRecommendedMark $payload.session_id)) {
+            $sessionsDir = Join-Path $keepRecommendedDir 'sessions'
+            [void](New-Item -ItemType Directory -Force -Path $sessionsDir)
+            Get-ChildItem -LiteralPath $sessionsDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
+            $record = Join-Path $sessionsDir $key
+            if ($payload.source -eq 'clear' -and (Test-Path -LiteralPath $record)) {
+                $cleared = Get-KeepRecommendedMark ([IO.File]::ReadAllText($record).Trim())
+                if ($cleared -and (Test-Path -LiteralPath $cleared)) { Set-KeepRecommendedMark $payload.session_id }
+            }
+            [IO.File]::WriteAllText($record, $payload.session_id)
+        }
+    } catch {
+        [Console]::Error.WriteLine("ask-dialog: $_")
+    }
+    exit 0
 }
 
 function Get-Recommended($q) {
@@ -353,7 +393,7 @@ namespace ClaudeHook {
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
             KeepRecommended = 'Keep Recommended'
-            KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session is answered with its recommended option, without asking you.'
+            KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session (also after /clear) is answered with its recommended option, without asking you.'
         }
         uk = @{
             Title = 'Claude Code чекає на вашу відповідь'; Submit = 'Надіслати'; Close = 'Закрити'
@@ -364,7 +404,7 @@ namespace ClaudeHook {
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
             KeepRecommended = 'Залишати рекомендовані'
-            KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії отримають рекомендовану відповідь, без запитань до вас.'
+            KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії (також після /clear) отримають рекомендовану відповідь, без запитань до вас.'
         }
     }
     # A call's context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
