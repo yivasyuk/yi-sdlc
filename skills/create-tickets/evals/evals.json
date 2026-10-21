@@ -1,0 +1,17 @@
+{
+  "skill_name": "create-tickets",
+  "evals": [
+    {"id": 1, "name": "whole-roadmap-dry-run", "cwd": "C:\Projects\Pet\yavias\yavias",
+     "prompt": "put the remaining roadmap steps into youtrack as tickets. dry run first, i want to see the plan before anything gets created",
+     "expected_output": "Stale warning for the uncommitted roadmap; plan for steps 6-11 with Feature/Epic choice for L steps, fog steps as Epic + recon Task, sdlc-mode by type, depends-on links from the graph, no tickets created", "files": []},
+    {"id": 2, "name": "single-L-step-live-trading", "cwd": "C:\Projects\Pet\yavias\yavias",
+     "prompt": "make tickets for step 8 (live trading) in the tracker --dry-run",
+     "expected_output": "Only step 8 planned; Feature-or-Epic proposal with reason; D1-D3 named in the description; step 7 dependency named as having no ticket and offered for the run", "files": []},
+    {"id": 3, "name": "fog-step-news-reader", "cwd": "C:\Projects\Pet\yavias\yavias",
+     "prompt": "file the news reader step from the roadmap in youtrack, dry run please",
+     "expected_output": "Epic (developer) + recon Task (semi-auto) as its subtask, carrying the fog table's what-to-learn and how-sharpened and decision D6", "files": []},
+    {"id": 4, "name": "roadmap-missing", "cwd": "<workspace>/fixtures/no-roadmap",
+     "prompt": "create tickets in youtrack for everything on our roadmap that isn't done yet (dry run)",
+     "expected_output": "Warns there is no docs/roadmap.md, suggests /yi-sdlc:roadmap, plans nothing (does not fall back to the idea brief)", "files": []}
+  ]
+}
