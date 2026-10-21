@@ -1,7 +1,8 @@
 ﻿param([string]$Auto = '', [string]$Mode = '', [string]$DataDir = '')
 
 # Claude Code PreToolUse hook for AskUserQuestion: answer the questions in a desktop window.
-#   Submit            - the selected answers; recommended ones are preselected (Enter)
+#   Submit            - the selected answers; recommended ones are preselected, else a single choice's
+#                       first option (a multiple choice starts empty) (Enter)
 #   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc)
 #   Keep Recommended  - ticked on Submit, the session's later questions get their recommended options
 #                       without a window (marks in keep-recommended\<session id>, swept after 7 days).
@@ -65,8 +66,10 @@ function Set-KeepRecommendedMark([string]$sessionId) {
 function Get-Recommended($q) {
     $opts = @($q.options)
     $rec = @($opts | Where-Object { $_.label -match '\(recommended\)' } | ForEach-Object { $_.label })
+    # Nothing marked: a single choice falls back to the first option, a multiple choice starts empty.
+    if ($q.multiSelect) { return ,$rec }
     if ($rec.Count -eq 0 -and $opts.Count -gt 0) { $rec = @($opts[0].label) }
-    if (-not $q.multiSelect) { $rec = @($rec | Select-Object -First 1) }
+    $rec = @($rec | Select-Object -First 1)
     return ,$rec
 }
 
@@ -103,7 +106,8 @@ try {
         }
         Write-Answers $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
             'The user ticked Keep Recommended earlier in this session, so these questions were not shown to them: ' +
-            'each was answered with its recommended option (the first option when none is marked).')
+            'each was answered with its recommended option (the first option when none is marked; ' +
+            'a multi-select question with none marked is left unanswered).')
         exit 0
     }
 
