@@ -4,10 +4,11 @@ description: >-
   Finish the current piece of work in one go: branch off main if needed, commit this session's changes
   (with --force, everything in the working tree, untracked files included) with a message that explains
   them, push, open a pull request, wait for its builds, and squash-merge it once
-  they pass. Operator-only: runs from /yi-sdlc:complete, never on Claude's own initiative. Commit, branch
-  and PR wording follow yi-sdlc:git-commit.
+  they pass. An optional free-text prompt steers the run (what to include, how to word the commit or PR,
+  what to tell reviewers). Operator-only: runs from /yi-sdlc:complete, never on Claude's own initiative.
+  Commit, branch and PR wording follow yi-sdlc:git-commit.
 disable-model-invocation: true
-argument-hint: "[--force] [commit subject override]"
+argument-hint: "[--force] [prompt]"
 ---
 
 # Complete: commit, PR, merge
@@ -21,7 +22,16 @@ Conventions for the branch name, the commit subject and body and the PR title co
 Arguments, both optional:
 
 - `--force` (or `force`): commit everything in the working tree, not only this session's changes (step 2).
-- Any other text is the commit subject to use.
+- Any other text is the operator's prompt: free-text instructions for this run, such as which files to
+  include or leave out, the commit subject or what the message should stress, the branch name, or notes
+  for the PR body. Examples: `/yi-sdlc:complete only the hooks changes`,
+  `/yi-sdlc:complete subject "Retry the gate driver on timeout"`,
+  `/yi-sdlc:complete mention in the PR that the config needs a restart`.
+
+Where the prompt and a step below disagree, the prompt wins, with one exception: it can't lift the hard
+limits (no secrets or oversized files staged, no `--no-verify` or amend, no merge while a check fails, no
+`--admin`). If the prompt asks for one of those, say it won't be done and carry on with the rest. If the
+prompt is unclear in a way that changes what gets committed or merged, ask before step 2.
 
 ## 1. Branch
 
@@ -94,4 +104,4 @@ Switch to the default branch and `git pull`. In a git worktree whose default bra
 elsewhere, skip the switch and just `git fetch`.
 
 Report in a few lines: the merge commit hash and subject, the PR link, the checks result (passed, or none
-configured), and any files left out of the commit.
+configured), any files left out of the commit, and any part of the prompt that wasn't followed and why.
