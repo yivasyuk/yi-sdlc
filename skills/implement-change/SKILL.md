@@ -13,7 +13,7 @@ description: >-
 disable-model-invocation: true
 argument-hint: <ticket-id, required>
 model: opus
-effort: xhigh
+effort: high
 ---
 
 # Implement a change ticket
