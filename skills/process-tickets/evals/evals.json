@@ -57,6 +57,32 @@
         "Lists the existing Panes' agents as stopped and offers to resume them without resuming any",
         "Created no Pane, branch or worktree and changed no ticket"
       ]
+    },
+    {
+      "id": 5,
+      "name": "named-ticket-still-confirms",
+      "prompt": "Start ts-10 in Pane. Answer Cancel to any confirmation question.",
+      "expected_output": "Confirms ts-10 is ready, then asks one confirmation question naming the count (1 ticket), ts-10 and how it starts (new Pane agent-sessions, implement-feature medium); on Cancel it stops with nothing created.",
+      "files": [],
+      "assertions": [
+        "Asks a confirmation question before creating anything, although the arguments named ts-10",
+        "The question states the count and how ts-10 starts (new Pane agent-sessions, implement-feature medium)",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "auto-picks-top",
+      "prompt": "/yi-sdlc:process-tickets --auto 2 --dry-run",
+      "expected_output": "No pick or confirmation question; takes the top 2 non-colliding candidates in rank order (ts-10 first), prints one 'Starting 2 tickets: ...' line, then the exact commands and prompts; offers the ts-12 board move without making it.",
+      "files": [],
+      "assertions": [
+        "Asks no pick or confirmation question",
+        "Picks at most 2 candidates, in rank order, with ts-10 first",
+        "Prints a line with the count and the picks before the commands",
+        "Does not move ts-12 on the board (a board move still needs the operator)",
+        "Created no Pane, branch or worktree and changed no ticket"
+      ]
     }
   ]
 }
