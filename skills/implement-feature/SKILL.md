@@ -14,7 +14,7 @@ description: >-
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [easy|medium|hard] [--stop-at-gates]
 model: opus
-effort: xhigh
+effort: high
 ---
 
 # Implement a feature ticket
