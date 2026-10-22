@@ -7,7 +7,8 @@ This script then sends /clear and the session's starting prompt again, so the ne
 fresh context and implement-feature resumes from the Feature pipeline comment. It never answers a gate:
 the operator does that in the feature's tab.
 
-Exits after gate 3, or when the feature's agent panel or its Pane goes away.
+Exits after gate 3, or when the feature's agent panel or its Pane goes away. While it watches, it keeps
+%TEMP%\yi-sdlc\gate-driver-<panel id>.pid (its process id), so the session can tell someone will clear it.
 #>
 param(
     [Parameter(Mandatory)] [string] $Pane,
@@ -88,35 +89,42 @@ if (-not $start) { Write-Host "Pane has no panel $Panel."; exit 1 }
 $seen = $start.Report.reportedAt
 $handled = @{}
 $misses = 0
+$marker = Join-Path $env:TEMP "yi-sdlc\gate-driver-$Panel.pid"
+[void](New-Item -ItemType Directory -Force -Path (Split-Path $marker))
+[IO.File]::WriteAllText($marker, "$PID")
 Write-Host "Watching panel $Panel for approved gates. Leave this tab open; it closes itself after gate $lastGate."
 
-while ($true) {
-    $event = Invoke-Runpane watch --pane $Pane --as "gates-$Panel" --until-event --json `
-        --kinds 'agent.report,panel.exited,pane.gone'
-    if (-not $event -or "$($event.kind)".StartsWith('_')) { Start-Sleep -Seconds 10; continue }
-    if ($event.kind -eq 'pane.gone') { Write-Host 'The Pane is gone.'; break }
+try {
+    while ($true) {
+        $event = Invoke-Runpane watch --pane $Pane --as "gates-$Panel" --until-event --json `
+            --kinds 'agent.report,panel.exited,pane.gone'
+        if (-not $event -or "$($event.kind)".StartsWith('_')) { Start-Sleep -Seconds 10; continue }
+        if ($event.kind -eq 'pane.gone') { Write-Host 'The Pane is gone.'; break }
 
-    $current = Get-PanelReport
-    if (-not $current) {
-        if (++$misses -ge 3) { Write-Host "Pane can't find panel $Panel any more."; break }
-        continue
+        $current = Get-PanelReport
+        if (-not $current) {
+            if (++$misses -ge 3) { Write-Host "Pane can't find panel $Panel any more."; break }
+            continue
+        }
+        $misses = 0
+        if ($current.Status -eq 'exited') { Write-Host 'The feature session has exited.'; break }
+
+        $report = $current.Report
+        if (-not $report -or $report.reportedAt -eq $seen) { continue }
+        $seen = $report.reportedAt
+        $gate = Get-GateApproval $report
+        if (-not $gate -or $handled["$($gate.gate)"]) { continue }
+        $handled["$($gate.gate)"] = $true
+
+        Write-Host "Gate $($gate.gate) approved for $($gate.ticket); next: $($gate.next). Clearing the session."
+        if (-not (Wait-Ready)) { Write-Host 'The session never came back to its prompt; stopping.'; break }
+        Send-ToAgent @('--text', '/clear')
+        Start-Sleep -Seconds 3
+        if (-not (Wait-Ready)) { Write-Host 'The session never came back after /clear; stopping.'; break }
+        Send-ToAgent @('--input-file', $Prompt)
+
+        if ([int]$gate.gate -ge $lastGate) { Write-Host "Gate $lastGate done; nothing left to clear."; break }
     }
-    $misses = 0
-    if ($current.Status -eq 'exited') { Write-Host 'The feature session has exited.'; break }
-
-    $report = $current.Report
-    if (-not $report -or $report.reportedAt -eq $seen) { continue }
-    $seen = $report.reportedAt
-    $gate = Get-GateApproval $report
-    if (-not $gate -or $handled["$($gate.gate)"]) { continue }
-    $handled["$($gate.gate)"] = $true
-
-    Write-Host "Gate $($gate.gate) approved for $($gate.ticket); next: $($gate.next). Clearing the session."
-    if (-not (Wait-Ready)) { Write-Host 'The session never came back to its prompt; stopping.'; break }
-    Send-ToAgent @('--text', '/clear')
-    Start-Sleep -Seconds 3
-    if (-not (Wait-Ready)) { Write-Host 'The session never came back after /clear; stopping.'; break }
-    Send-ToAgent @('--input-file', $Prompt)
-
-    if ([int]$gate.gate -ge $lastGate) { Write-Host "Gate $lastGate done; nothing left to clear."; break }
+} finally {
+    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
 }

@@ -11,7 +11,8 @@
 #   Close             - no output, so Claude Code shows its normal terminal prompt instead (Esc). Only the
 #                       shown tab; the window's own close button closes every tab.
 #   Keep Recommended  - ticked on Submit, the session's later questions get their recommended options
-#                       without a window (marks in keep-recommended\<session id>, swept after 7 days).
+#                       without a window (marks in keep-recommended\<session id>, swept after 7 days), and
+#                       Claude is told to work in auto mode. A question headed "Critical" is still asked.
 #                       /clear starts a new session id; the -SessionStart hook carries the mark over to it.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
 #                       Double-click a word and keep the button down: its Ukrainian translation (headless
@@ -24,7 +25,7 @@
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
 # -SessionStart is the SessionStart hook: it records each session per Claude process and, on a /clear, copies
-# the cleared session's Keep Recommended mark to the new one.
+# the cleared session's Keep Recommended mark to the new one, and tells a session with the mark it is in auto mode.
 # -Auto submit|close builds the window in this process without showing it (for testing); env
 # ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
 # ASK_DIALOG_WORD=<word> translates that word of the first question as if held after a double-click, ASK_DIALOG_MORE=<payload.json>;... adds more tabs (not opened)
@@ -72,6 +73,16 @@ function Set-KeepRecommendedMark([string]$sessionId) {
     Get-ChildItem -LiteralPath $keepRecommendedDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
     [IO.File]::WriteAllText($mark, (Get-Date).ToString('o'))
 }
+function Test-KeepRecommended([string]$sessionId) {
+    $mark = Get-KeepRecommendedMark $sessionId
+    [bool]($mark -and (Test-Path -LiteralPath $mark))
+}
+# What Claude is told while Keep Recommended is on: on the Submit that ticks it, on every question answered
+# from it, and at the start of a session that has it (after a /clear).
+$keepRecommendedNote = 'The user ticked Keep Recommended: treat it as auto mode for the rest of this session. ' +
+    'Their questions are answered with the recommended options without being shown, so do not stop at planned ' +
+    'checkpoints or gates to wait for them: go on with the recommended path and record what you decided. ' +
+    'Only a critical question still reaches them: ask it with AskUserQuestion with the header "Critical".'
 
 # The Claude Code process this hook runs under, as "<pid>-<start ticks>" so a reused PID gets a new key.
 # It stays the same across /clear, while the session id changes.
@@ -88,7 +99,7 @@ function Get-ClaudeProcessKey {
 
 # The SessionStart hook: every start records its session id per Claude process (keep-recommended\sessions\
 # <process key>). On a /clear, the id recorded before it is the session just cleared, and a Keep Recommended
-# mark it had is copied to the new session.
+# mark it had is copied to the new session. A session that has the mark is told so, so it starts in auto mode.
 if ($SessionStart) {
     try {
         $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -99,10 +110,14 @@ if ($SessionStart) {
             Get-ChildItem -LiteralPath $sessionsDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
             $record = Join-Path $sessionsDir $key
             if ($payload.source -eq 'clear' -and (Test-Path -LiteralPath $record)) {
-                $cleared = Get-KeepRecommendedMark ([IO.File]::ReadAllText($record).Trim())
-                if ($cleared -and (Test-Path -LiteralPath $cleared)) { Set-KeepRecommendedMark $payload.session_id }
+                if (Test-KeepRecommended ([IO.File]::ReadAllText($record).Trim())) { Set-KeepRecommendedMark $payload.session_id }
             }
             [IO.File]::WriteAllText($record, $payload.session_id)
+        }
+        if (Test-KeepRecommended $payload.session_id) {
+            [Console]::Out.Write((ConvertTo-Json -Compress -InputObject @{
+                hookSpecificOutput = @{ hookEventName = 'SessionStart'; additionalContext = $keepRecommendedNote }
+            }))
         }
     } catch {
         [Console]::Error.WriteLine("ask-dialog: $_")
@@ -202,18 +217,19 @@ if (-not $Serve) {
         $questions = @($toolInput.questions)
         if ($questions.Count -eq 0) { exit 0 }
 
-        # Keep Recommended was ticked earlier in this session: answer without asking, in either mode.
-        $mark = Get-KeepRecommendedMark $payload.session_id
-        if ($mark -and (Test-Path -LiteralPath $mark)) {
+        # Keep Recommended was ticked earlier in this session: answer without asking, in either mode, unless
+        # a question is headed Critical; those are asked as usual.
+        $critical = @($questions | Where-Object { "$($_.header)" -match '^\s*critical\b' }).Count -gt 0
+        if (-not $critical -and (Test-KeepRecommended $payload.session_id)) {
             $answers = [ordered]@{}
             foreach ($q in $questions) {
                 $rec = Get-Recommended $q
                 if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
             }
             [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
-                'The user ticked Keep Recommended earlier in this session, so these questions were not shown to them: ' +
-                'each was answered with its recommended option (the first option when none is marked; ' +
-                'a multi-select question with none marked is left unanswered).')))
+                'These questions were not shown to the user: each was answered with its recommended option (the ' +
+                'first option when none is marked; a multi-select question with none marked is left unanswered). ' +
+                $keepRecommendedNote)))
             exit 0
         }
 
@@ -393,7 +409,7 @@ namespace ClaudeHook {
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
             KeepRecommended = 'Keep Recommended'
-            KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session (also after /clear) is answered with its recommended option, without asking you.'
+            KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session (also after /clear) is answered with its recommended option, without asking you, and Claude works on its own (auto mode). Only critical questions are still asked.'
         }
         uk = @{
             Title = 'Claude Code чекає на вашу відповідь'; Submit = 'Надіслати'; Close = 'Закрити'
@@ -404,7 +420,7 @@ namespace ClaudeHook {
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
             KeepRecommended = 'Залишати рекомендовані'
-            KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії (також після /clear) отримають рекомендовану відповідь, без запитань до вас.'
+            KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії (також після /clear) отримають рекомендовану відповідь, без запитань до вас, і Claude працює сам (автоматичний режим). Питатиме лише про критичне.'
         }
     }
     # A call's context: project (the repo's name, also from a worktree; else the cwd), branch, and the SDLC
@@ -1556,8 +1572,7 @@ $content
 
         if ($tab.Keep.Checked) {
             Set-KeepRecommendedMark $tab.Payload.session_id
-            $keepNote = 'The user ticked Keep Recommended: their later questions in this session are answered with the recommended options without being shown.'
-            $noteContext = if ($noteContext) { "$noteContext`n`n$keepNote" } else { $keepNote }
+            $noteContext = if ($noteContext) { "$noteContext`n`n$keepRecommendedNote" } else { $keepRecommendedNote }
         }
         Get-AnswersOutput $tab.Payload.tool_input $answers 'Answered in the desktop dialog' $noteContext
     }
