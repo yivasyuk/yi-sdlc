@@ -256,9 +256,17 @@ stop only once the gate is approved.
 
 **Only stop when something will clear you.** Under `--stop-at-gates` the stop is for the gate driver
 (`/yi-sdlc:process-tickets` starts it as the Pane's `gates` tab), which keeps
-`%TEMP%\yi-sdlc\gate-driver-<PANE_PANEL_ID>.pid` with its process id while it watches. When the file is
-missing, or its process isn't running, nobody will send `/clear`: don't end the turn at the gate. Say in
-one line that no gate driver is watching, and go on to the next stage in this context.
+`%TEMP%\yi-sdlc\gate-driver-<PANE_PANEL_ID>.pid` with its process id while it watches. A driver whose tab
+was closed leaves that file behind, and Windows reuses process ids, so don't judge the file yourself: just
+before step 1, run
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PLUGIN_ROOT}/skills/process-tickets/scripts/test-gate-driver.ps1
+```
+
+It checks that the process is running and is `gate-driver.ps1` for this panel, and removes a stale file.
+Exit code 0: stop as above. Anything else: nobody will send `/clear`, so don't end the turn at the gate.
+Print the line it printed and go on to the next stage in this context.
 
 **In auto mode** (§ Auto mode) a gate isn't asked:
 

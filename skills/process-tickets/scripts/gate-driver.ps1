@@ -8,7 +8,8 @@ fresh context and implement-feature resumes from the Feature pipeline comment. I
 the operator does that in the feature's tab.
 
 Exits after gate 3, or when the feature's agent panel or its Pane goes away. While it watches, it keeps
-%TEMP%\yi-sdlc\gate-driver-<panel id>.pid (its process id), so the session can tell someone will clear it.
+%TEMP%\yi-sdlc\gate-driver-<panel id>.pid (its process id), so the session can tell someone will clear it
+(test-gate-driver.ps1 checks it).
 #>
 param(
     [Parameter(Mandatory)] [string] $Pane,
