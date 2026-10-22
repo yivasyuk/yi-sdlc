@@ -8,8 +8,10 @@ description: >-
   unblocked on the board or backlog, or wants to kick off the next feature or ticket, even without naming
   the skill. Needs the repo's .claude/yi-sdlc/project.md (YouTrack adapter) and the Pane app.
   Arguments: optional depth (easy|medium|hard, default medium, passed to implement-feature), ticket IDs to
-  start without the question, --dry-run to stop before anything is created.
-argument-hint: '[easy|medium|hard] [<key>-N ...] [--dry-run]'
+  propose (still confirmed by the operator before anything starts), --dry-run to stop before anything is
+  created. By default every start needs the operator's approval; only an explicit --auto [N] lets it pick
+  and start the top N (N defaults to 1) without asking.
+argument-hint: '[easy|medium|hard] [<key>-N ...] [--auto [N]] [--dry-run]'
 ---
 
 # Check the board and start the next tickets
@@ -30,8 +32,15 @@ key `<key>` (`yv`, `ts`, …). Don't restate them here; naming rules live only i
 
 - a depth, `easy`, `medium` or `hard` (default `medium`, though implement-feature's own default is
   `easy`), always passed on to `/yi-sdlc:implement-feature` explicitly;
-- ticket IDs (`<key>-10`, `<KEY>-10`, `10`, normalized as the profile says): start these without asking, once step 2
-  confirms they are ready (say so and skip any that aren't);
+- ticket IDs (`<key>-10`, `<KEY>-10`, `10`, normalized as the profile says): the tickets to propose, once step 2
+  confirms they are ready (say so and skip any that aren't). They replace the pick question, not the
+  confirmation: step 3 still asks the operator to confirm them before anything starts;
+- `--auto [N]` (or "auto"): off by default, so every start needs the operator's approval (step 3). Only
+  when the operator passes it do they hand the choice to you. Step 3 asks nothing: you pick and start
+  without approval (see step 3 § Auto). `N` is how many to start at most (default `1`). With ticket IDs,
+  `--auto` starts those that are ready without the confirmation, and `N` is ignored. It covers the pick
+  only: a board move (step 2's "looks done but open") still needs the operator's yes, and so does any
+  trust or approval prompt in a new Pane;
 - `--dry-run` (or "dry run"): do everything up to step 4 with reads only (no `git fetch` or merge: compare
   against `origin/main` as last fetched and say so), then print the exact commands and prompts instead of
   running them. Nothing is created, copied, fetched or moved.
@@ -108,16 +117,22 @@ Under it, only the lines that have content:
 - **Looks done but open:** each `stale` item with its reason, and what it holds up (the `blocked` entries
   whose blocker has `looks_done`). Offer to move them to Done, but only do it if the operator says so. A
   merged PR is the proof to check (`gh pr list --state merged --search <slug>`); the board move is
-  outward-facing and theirs to approve.
+  outward-facing and theirs to approve. Ask about the move on its own: never put "and start <key>-N" in
+  the same question or option. After a move, run step 1 again and show the new picture; whatever the move
+  unblocked goes through step 3 like any other candidate.
 - **Blocked:** the top 2–3 by priority with their open blockers, so the operator sees what unblocks next.
 
 If `top` is empty, say what would unblock the next item and stop.
 
-## 3. Ask which to start
+## 3. Ask which to start, then confirm
 
-Skip this when the arguments named tickets.
+Nothing starts until the operator has confirmed the exact set: which tickets and how many. This holds
+when the arguments named tickets, when there is a single candidate, and when the candidate only became
+ready because the operator approved a board move a moment ago. The exceptions are `--dry-run`, which
+starts nothing, and `--auto`, where the operator has approved in advance.
 
-`AskUserQuestion` allows at most 4 options per question, so:
+**Pick.** Skip this question when the arguments named tickets (they are the picks). `AskUserQuestion`
+allows at most 4 options per question, so:
 
 - 1 candidate: ask "Start <key>-N (<summary>)?" with Start / Not now.
 - 2–4 candidates: one `multiSelect` question listing them all.
@@ -127,9 +142,23 @@ Skip this when the arguments named tickets.
 Each option label is `<key>-N <slug or short title>`; its description gives the kind, priority and how it
 starts. No pick means stop with nothing started.
 
+**Confirm.** Then ask one more question, on its own, that states the count and lists every pick with how
+it starts: "Start 2 tickets: <key>-15 chart-alerts (new Pane `chart-alerts`, implement-feature medium),
+<key>-21 (tab in Pane `backtesting`)?" with Start these / Change the picks / Cancel. "Change the picks"
+goes back to the pick question; "Cancel" stops with nothing started. The single-candidate question above
+already names one ticket, so when it gave Start and its description said how the ticket starts and at
+what depth, it counts as the confirmation.
+
 Starting more than one is fine; that is the point of a Pane per feature. If two picks would collide (a
 feature and a task of the same feature, or two tasks of one feature whose `files_hint` overlap in
-`tasks.json`), say so in one line before starting them.
+`tasks.json`), say so in the confirmation question.
+
+**Auto.** With `--auto`, skip both questions and pick yourself: walk `top` in rank order and take each
+candidate until you have `N`, skipping one that would collide with a pick you already took (say which and
+why). A task whose feature's session is implementing right now (step 5's check) counts as a collision
+too. Before step 4, print one line with the count and the picks, in the confirmation question's words
+("Starting 1 ticket: <key>-15 chart-alerts (new Pane `chart-alerts`, implement-feature medium)"), then go
+on without waiting.
 
 ## 4. Get ready to start
 
@@ -183,8 +212,8 @@ brings up `ticket-env.ps1` around that worktree; the note only passes on what th
      --agent claude --prompt-file <prompt file> --wait-ready --no-focus --yes --json
    ```
 
-   `--yes` is right here: the operator chose this ticket in step 3, and that is the confirmation Pane asks
-   for.
+   `--yes` is right here: the operator confirmed this ticket in step 3 (or handed you the choice with
+   `--auto`), and that is the confirmation Pane asks for.
 
 3. Copy the git-ignored Claude files the worktree lacks: `<main>\.claude\sdlc.local.md` (the operator's
    yi-sdlc settings; without it the stages fall back to plugin defaults) and
@@ -234,7 +263,8 @@ this Pane: no other tasks, no push, no PR, no comments or moves on the feature t
 
 A task tab shares the worktree with the feature's own session. If that session is implementing right now
 (`agentState: working` and its `tracker.md` shows tasks in progress), say that the two may edit the same
-files and let the operator decide whether to go ahead.
+files and let the operator decide whether to go ahead. Under `--auto`, don't start it: skip it and say
+why.
 
 ## 6. Report
 
@@ -242,7 +272,8 @@ One message: per started ticket, its Pane and panel and a clickable link (`mcp__
 and where its questions will come up: implement-feature's interview questions, its three gates (PRD,
 architecture, plan) and the merge approval all appear in that Pane, and its `gates` tab clears the session
 after each approved gate. Ticking Keep Recommended on one of its questions puts that run in auto mode: it
-stops only for questions headed Critical. Mention anything skipped and why, and
+stops only for questions headed Critical. Under `--auto`, say that you chose the picks and which ranked
+candidates you passed over. Mention anything skipped and why, and
 repeat the "looks done but open" items if the operator didn't act on them.
 
 ## Notes
