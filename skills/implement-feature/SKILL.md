@@ -6,9 +6,10 @@ description: >-
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
-  easy (default), medium or hard. Stops at three gates (PRD, architecture, plan) and before merging;
-  resumable, so re-running it picks up at the next unfinished stage. For new features and changes too big for
-  one PR; defects go to /yi-sdlc:implement-fix, one-PR changes to /yi-sdlc:implement-change.
+  easy (default), medium or hard. Stops at three gates (PRD, architecture, plan) and before merging,
+  unless the operator ticked Keep Recommended: then it runs in auto mode and stops only for a critical
+  finding. Resumable, so re-running it picks up at the next unfinished stage. For new features and changes
+  too big for one PR; defects go to /yi-sdlc:implement-fix, one-PR changes to /yi-sdlc:implement-change.
   Needs the repo's .claude/yi-sdlc/project.md.
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [easy|medium|hard] [--stop-at-gates]
@@ -32,10 +33,12 @@ The planned stops:
 3. **Before merging** (step 10).
 
 Between them the skill runs on its own, apart from the questions the stages themselves ask, which the
-questioning hardness (step 0) scales.
+questioning hardness (step 0) scales. When the operator ticked **Keep Recommended**, none of these stops
+waits for them: the run goes on in auto mode and stops only for a critical finding (§ Auto mode).
 
 The ticket's `sdlc-mode` doesn't apply to this skill (yet): it runs the same way whatever the ticket says,
 including the `developer` default. If the ticket sets a mode, say so in one line in your first message.
+What hands this skill over to auto is the operator's Keep Recommended (§ Auto mode).
 
 **Read `${CLAUDE_PLUGIN_ROOT}/ticket/workflow.md` first, then the repo's project profile
 (`.claude/yi-sdlc/project.md` in the main clone), then the files the workflow lists (the tracker contract
@@ -64,6 +67,27 @@ which analyses they run, never what they cover. `easy` decides the reversible ca
 shows the assumptions to veto; `medium` walks the real decisions; `hard` walks every decision and runs the
 full analysis suite (researcher, strategist, analyst, devil's advocate). The operator chose it with this
 command, so every stage gets `--depth=<depth>` and doesn't ask for the level again (step 5).
+
+## Auto mode: Keep Recommended
+
+**Keep Recommended** is a box in the desktop question window. When the operator ticks it, the hook answers
+every later question of the session with its recommended option without showing it, also after `/clear`,
+and tells the session so: in the note on the answered question, and at the start of every session that
+has it (a SessionStart message saying the user ticked Keep Recommended). From the moment you see that,
+this run is in **auto mode**, whatever the ticket's `sdlc-mode` says, until the session ends:
+
+- **The stages run as usual**, questions and all: the hook answers them with the recommended option, so
+  every stage still asks with its recommended option first and marked.
+- **The gates don't wait** (step 6): the gate summary goes onto the ticket and the run goes on.
+- **The merge doesn't wait** (step 10): it follows workflow § Ask to merge for `auto`.
+- **Work as workflow § Working in auto says**: take the defensible best guess, keep the list of decisions
+  taken in auto, put it in the **Feature pipeline** comment, the PR body and your final message.
+- **Stop only for a critical finding**: anything in workflow § Critical stops in auto. Ask it with
+  `AskUserQuestion` with the header **`Critical`** (the hook still shows those), say in the question what
+  you found and what each answer leads to, and note it in the **Feature pipeline** comment. Don't use
+  `Critical` for anything else: it is the one question that interrupts the operator.
+
+The steps below describe the run with its planned stops. Read each stop with this section in mind.
 
 ## 1. Read the ticket and check it is a feature
 
@@ -144,7 +168,8 @@ except at the three gates (step 6).
   idea and prior notes. The ticket is the operator's own words; the interview still asks its checkpoint
   questions, but starts from them instead of from nothing.
 - **Never answer a stage's question for the operator.** The stages' `AskUserQuestion` checkpoints are the
-  data the artifacts are made of. `<depth>` decides how many there are, not whether they're real.
+  data the artifacts are made of. `<depth>` decides how many there are, not whether they're real. In auto
+  mode the hook answers them, not you: still ask them.
 
 | # | Stage | Run | Done when |
 |---|---|---|---|
@@ -229,6 +254,22 @@ the next stage:
 A change the operator asked for at the gate is not an approval: go back to the owning stage as above, and
 stop only once the gate is approved.
 
+**Only stop when something will clear you.** Under `--stop-at-gates` the stop is for the gate driver
+(`/yi-sdlc:process-tickets` starts it as the Pane's `gates` tab), which keeps
+`%TEMP%\yi-sdlc\gate-driver-<PANE_PANEL_ID>.pid` with its process id while it watches. When the file is
+missing, or its process isn't running, nobody will send `/clear`: don't end the turn at the gate. Say in
+one line that no gate driver is watching, and go on to the next stage in this context.
+
+**In auto mode** (§ Auto mode) a gate isn't asked:
+
+1. Put the gate summary above into the **Feature pipeline** comment, with the decisions taken in auto since
+   the last gate, and record the gate as **approved in auto (Keep Recommended)**.
+2. Check the summary against workflow § Critical stops in auto. Anything there (a reversed non-goal or
+   ADR, a migration that isn't additive, a breaking contract change, money, safety or secrets) is a
+   critical finding: ask it as § Auto mode says, and go on once it's answered.
+3. Otherwise print the summary in two or three lines and go on: with `--stop-at-gates` (and a driver
+   watching), stop as above, so the driver clears and resumes you; without it, start the next stage.
+
 ## 7. Check it live on the isolated app
 
 After the review passes, run `ticket-env.ps1 restart -Issue <id>` (so what doesn't hot-reload, and the
@@ -271,7 +312,8 @@ Workflow § PR and ticket update, from the worktree:
 
 ## 10. Stop: ask to merge
 
-Workflow § Ask to merge, always (whatever `sdlc-mode` says). The live before/after is the step 7 check:
+Workflow § Ask to merge, always (whatever `sdlc-mode` says), except in auto mode (§ Auto mode): then its
+`auto` branch, which merges only a PR that earned it. The live before/after is the step 7 check:
 what the app can do now that it couldn't. Also list the ADRs the feature adds and the migrations, since
 those are what's hardest to undo after the merge.
 

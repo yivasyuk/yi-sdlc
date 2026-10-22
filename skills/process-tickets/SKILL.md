@@ -208,12 +208,15 @@ brings up `ticket-env.ps1` around that worktree; the note only passes on what th
    and bash eats backslashes: `C:\Projects\Pet\…` arrives as `C:ProjectsPet…` and the driver never
    starts. Then check the tab once with `mcp__pane__agents_status` on its panel: its screen should say
    `Watching panel <panel id> for approved gates`. Anything else (a "does not exist" error, a bare
-   prompt) means no driver is running, and the session will stop at gate 1 with nobody to clear it.
+   prompt) means no driver is running: the session then finds no driver's marker at gate 1 and goes on
+   without clearing, so fix the tab and start the driver again.
 
    After each gate the operator approves, the session reports it and ends its turn; the driver then sends
    it `/clear` and the prompt file again, so every stretch between gates starts with a fresh context and
    implement-feature resumes from its **Feature pipeline** comment. The driver never answers a gate, and
-   it closes itself after gate 3 or when the session exits.
+   it closes itself after gate 3 or when the session exits. When the operator ticks Keep Recommended in
+   the question window, the session approves the gates itself (implement-feature § Auto mode) and the
+   driver still clears it after each one, so the run goes from gate to gate without anyone at the Pane.
 
 ### A task: a tab in its feature's Pane
 
@@ -238,7 +241,8 @@ files and let the operator decide whether to go ahead.
 One message: per started ticket, its Pane and panel and a clickable link (`mcp__pane__links_create`),
 and where its questions will come up: implement-feature's interview questions, its three gates (PRD,
 architecture, plan) and the merge approval all appear in that Pane, and its `gates` tab clears the session
-after each approved gate. Mention anything skipped and why, and
+after each approved gate. Ticking Keep Recommended on one of its questions puts that run in auto mode: it
+stops only for questions headed Critical. Mention anything skipped and why, and
 repeat the "looks done but open" items if the operator didn't act on them.
 
 ## Notes
