@@ -2,7 +2,8 @@
 name: implement-fix
 description: >-
   Fix a defect ticket (YouTrack, Jira, or any tracker the repo's profile maps) end to end by its ID in an
-  isolated environment (its own Pane and worktree): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
+  isolated environment (its own Pane and worktree, which it opens and hands the run to when started
+  outside it): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
   yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the operator
   approves. The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
   without asking, stops only on critical issues), semi-auto (asks before merging) or developer, the
@@ -12,7 +13,7 @@ description: >-
 disable-model-invocation: true
 argument-hint: <ticket-id, required>
 model: opus
-effort: xhigh
+effort: high
 ---
 
 # Fix a ticket
@@ -65,6 +66,11 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
 Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
 is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
 the printed JSON.
+
+When this session isn't in that Pane (you started it from the main clone), this is where it ends: open the
+Pane and hand the ticket off to a Claude agent there (workflow § Hand it off to the Pane), with the branch
+slug in the prompt's notes so the Pane's session takes the same `<branch>`. That session runs this skill
+again from step 0 and does the rest.
 
 ## 3. Reproduce on the running app
 

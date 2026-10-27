@@ -3,7 +3,7 @@
   "name": "yi-sdlc",
   "displayName": "YI SDLC",
   "version": "0.6.0",
-  "description": "Yaroslav's user-level Claude Code kit for Windows: the full SDLC pipeline (the sdlc plugin by Kyrylo Genkov, imported under the yi-sdlc namespace: 21 skills and 11 agents from map-architecture and interview to ship-feature), tracker-agnostic ticket skills (implement-fix, implement-change, implement-feature) with YouTrack and Jira adapters, driven by a per-repo profile, create-tickets and process-tickets (roadmap steps onto the YouTrack board, then the ranked ready tickets started in Pane), run-application (the app from any worktree on its own ports, with checked links), commit conventions, complete (commit, PR and merge after green builds in one word), a desktop dialog for Claude's questions, and toast notifications.",
+  "description": "Yaroslav's user-level Claude Code kit for Windows: the full SDLC pipeline (the sdlc plugin by Kyrylo Genkov, imported under the yi-sdlc namespace: 21 skills and 11 agents from map-architecture and interview to ship-feature), tracker-agnostic ticket skills (implement-fix, implement-change, implement-feature) with YouTrack and Jira adapters, driven by a per-repo profile, create-tickets and process-tickets (roadmap steps onto the YouTrack board, then the ranked ready tickets to start), run-application (the app from any worktree on its own ports, with checked links), commit conventions, complete (commit, PR and merge after green builds in one word), a desktop dialog for Claude's questions, and toast notifications.",
   "author": {
     "name": "Yaroslav",
     "url": "https://github.com/yivasyuk"

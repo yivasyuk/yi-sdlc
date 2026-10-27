@@ -2,3 +2,7 @@
 /hooks/notification-mode
 /hooks/keep-recommended/
 /hooks/ask-dialog.log
+
+# Python bytecode caches
+__pycache__/
+*.pyc

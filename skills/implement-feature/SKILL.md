@@ -2,7 +2,9 @@
 name: implement-feature
 description: >-
   Build a feature ticket (YouTrack, Jira, or any tracker the repo's profile maps) through the whole SDLC
-  pipeline in an isolated environment (its own Pane and worktree): take an optional feature name, then run yi-sdlc:interview,
+  pipeline in an isolated environment (its own Pane and worktree, which it opens and hands the run to when
+  started outside it, with a gates tab that clears the session after each gate): take an optional feature
+  name, then run yi-sdlc:interview,
   write-prd, clarify-prd, architecture-design, sequences, data model, API contract, design spec, tasks, test
   plan, TDD implementation, review, live verification and ship, then open a PR, report back on the ticket,
   and merge after the operator approves. A second argument sets how hard the stages question the operator:
@@ -14,7 +16,7 @@ description: >-
 disable-model-invocation: true
 argument-hint: <ticket-id, required> [easy|medium|hard] [--stop-at-gates]
 model: opus
-effort: xhigh
+effort: high
 ---
 
 # Implement a feature ticket
@@ -59,8 +61,8 @@ The arguments are: `$ARGUMENTS`.
   `--depth=<level>`. Missing means **`easy`**. Anything else: ask once which of the three they meant. Below,
   `<depth>` is the level.
 - **`--stop-at-gates`** (optional): end the session's turn after each approved gate instead of going on to
-  the next stage, so it can be cleared and the command re-run with a fresh context (step 6). Whatever
-  clears and resumes the session for the operator, such as a Pane watcher, passes it.
+  the next stage, so it can be cleared and the command re-run with a fresh context (step 6). The hand-off
+  (step 3) passes it, with the `gates` tab that clears and resumes the session.
 
 `<depth>` is the SDLC depth dial (`interview_depth`): it sets how many questions the Q&A stages ask and
 which analyses they run, never what they cover. `easy` decides the reversible calls with defaults and
@@ -126,19 +128,42 @@ patterns; profile § Branches `feature` and `feature-unnamed` may differ):
 
 On a re-run, these are in the **Feature pipeline** comment and the branch name: don't ask again.
 
-## 3. Bring up the environment and enter it
+## 3. Bring up the environment
 
 1. `tracker.move <id> in-progress`.
 2. Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>`, named `<slug>`,
    then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and the printed JSON. On a
-   re-run it finds the same Pane, and `up` restarts what isn't running.
-3. **Enter the worktree**, unless this session already runs in it (started in the ticket's Pane):
-   `EnterWorktree` with `path` = `<worktree>`. The `yi-sdlc:*` stages write `docs/features/<slug>/…` and run
-   git relative to the working directory, so the session itself has to be in the worktree, not only your
-   own edits. Check with `git branch --show-current`.
-4. Copy `<main>\.claude\sdlc.local.md` into the worktree's `.claude\` if it exists and isn't there. It is
-   git-ignored, so the worktree doesn't have it, and without it the stages fall back to plugin defaults
-   (integration tests, models, commit settings) that aren't the operator's.
+   re-run `up` restarts what isn't running. The `yi-sdlc:*` stages write `docs/features/<slug>/…` and run
+   git relative to the working directory, which is why the session itself runs in the worktree: check with
+   `git branch --show-current`.
+3. **Started outside the ticket's Pane** (from the main clone, or with the command
+   `/yi-sdlc:process-tickets` gave the operator), hand it off (workflow § Hand it off to the Pane) and end
+   your turn there:
+   - The prompt's first line is `/yi-sdlc:implement-feature <id> <depth> --stop-at-gates`, and its notes
+     say the name is settled: "The feature name is chosen: `<slug>`. Don't ask for it in step 2." (or
+     "No name: use `<id>`.").
+   - After the agent starts, add the gate driver as a `gates` tab in the same Pane, with the Pane id and the
+     agent's panel id:
+
+     ```
+     runpane panels create --pane <pane id> --title gates --source agent --no-focus --yes --json
+       --tool-command "powershell -NoProfile -ExecutionPolicy Bypass -File <skill dir>/scripts/gate-driver.ps1 -Pane <pane id> -Panel <panel id> -Prompt <prompt file>"
+     ```
+
+     `<skill dir>` is this skill's folder as an absolute path, with `${CLAUDE_PLUGIN_ROOT}` expanded (e.g.
+     `C:/Projects/Pet/yi-sdlc/skills/implement-feature`): the tab's shell doesn't know the variable. **Write
+     both paths with forward slashes.** Pane types the command into the Pane's own shell, which can be Git
+     Bash, and bash eats backslashes: `C:\Projects\Pet\…` arrives as `C:ProjectsPet…` and the driver never
+     starts. Then check the tab once with `mcp__pane__agents_status` on its panel: its screen should say
+     `Watching panel <panel id> for approved gates`. Anything else (a "does not exist" error, a bare
+     prompt) means no driver is running: the session then finds no driver at gate 1 and goes on without
+     clearing (step 6), so fix the tab and start the driver again.
+   - The final message also says that the interview questions, the three gates and the merge approval come
+     up in that Pane, and that its `gates` tab clears the session after each approved gate.
+4. Copy `<main>\.claude\sdlc.local.md` into the worktree's `.claude\` if it exists and isn't there (the
+   hand-off already did, unless the operator started this run in a Pane of their own). It is git-ignored,
+   so the worktree doesn't have it, and without it the stages fall back to plugin defaults (integration
+   tests, models, commit settings) that aren't the operator's.
 
 The rules in workflow § The isolated environment hold for the whole run: the operator's checkout and dev
 stack stay untouched, and profile § Environment says what must never happen outside the sandbox.
@@ -164,6 +189,9 @@ except at the three gates (step 6).
 - **Pass `--depth=<depth>`** to every stage that takes it. `yi-sdlc:interview` opens with a mandatory depth
   question of its own: tell it in the args that the operator already chose `<depth>` via
   `/yi-sdlc:implement-feature`, and give that as the answer if it still asks.
+- **Map the board's tasks at break-tasks.** The ticket's open subtasks (`tracker.links`) are already this
+  feature's tasks on the board: tell `break-tasks` to map `tasks.json` entries onto them (its `ticket`
+  field) and create tickets only for the tasks they don't cover.
 - **Brief the interview with the ticket**: title, description, comments, links and attachments as the raw
   idea and prior notes. The ticket is the operator's own words; the interview still asks its checkpoint
   questions, but starts from them instead of from nothing.
@@ -214,10 +242,9 @@ stage itself picks up from what is on disk.
   Blocked exit with the open findings.
 - The operator wants to stop for now (to think, or to answer later) → **pause**, not `blocked`: commit
   what is worth keeping (`<prefix> WIP <what>`), note the open question in the **Feature pipeline**
-  comment, `ExitWorktree` with `keep` (when step 3 entered it), and `ticket-env.ps1 down -Issue <id>`; the
-  Pane stays. The ticket stays `in-progress`. Re-running the command picks up there.
-- Anything workflow § Blocked exit covers (the ticket isn't workable, a decision isn't yours) → that exit,
-  with `ExitWorktree` `keep` (when step 3 entered it) before its `down`.
+  comment, and `ticket-env.ps1 down -Issue <id>`; the Pane stays. The ticket stays `in-progress`.
+  Re-running the command picks up there.
+- Anything workflow § Blocked exit covers (the ticket isn't workable, a decision isn't yours) → that exit.
 
 ## 6. The gates
 
@@ -255,10 +282,18 @@ A change the operator asked for at the gate is not an approval: go back to the o
 stop only once the gate is approved.
 
 **Only stop when something will clear you.** Under `--stop-at-gates` the stop is for the gate driver
-(`/yi-sdlc:process-tickets` starts it as the Pane's `gates` tab), which keeps
-`%TEMP%\yi-sdlc\gate-driver-<PANE_PANEL_ID>.pid` with its process id while it watches. When the file is
-missing, or its process isn't running, nobody will send `/clear`: don't end the turn at the gate. Say in
-one line that no gate driver is watching, and go on to the next stage in this context.
+(step 3's hand-off starts it as the Pane's `gates` tab), which keeps
+`%TEMP%\yi-sdlc\gate-driver-<PANE_PANEL_ID>.pid` with its process id while it watches. A driver whose tab
+was closed leaves that file behind, and Windows reuses process ids, so don't judge the file yourself: just
+before step 1, run
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PLUGIN_ROOT}/skills/implement-feature/scripts/test-gate-driver.ps1
+```
+
+It checks that the process is running and is `gate-driver.ps1` for this panel, and removes a stale file.
+Exit code 0: stop as above. Anything else: nobody will send `/clear`, so don't end the turn at the gate.
+Print the line it printed and go on to the next stage in this context.
 
 **In auto mode** (§ Auto mode) a gate isn't asked:
 
@@ -319,7 +354,5 @@ those are what's hardest to undo after the merge.
 
 ## 11. After approval
 
-Workflow § After approval, with one step first when step 3 entered the worktree: `ExitWorktree` with
-`keep` (the session goes back to the main clone; archiving the Pane removes the worktree). Then the merge,
-the board move, `ticket-env.ps1 down -Issue <id>`, archiving the Pane (not when this session runs in it),
-`git branch -D <branch>`. The `ship-feature` roadmap move is already in the merged PR.
+Workflow § After approval: the merge, the board move, `ticket-env.ps1 down -Issue <id>`, and the operator
+archives the Pane and deletes `<branch>`. The `ship-feature` roadmap move is already in the merged PR.

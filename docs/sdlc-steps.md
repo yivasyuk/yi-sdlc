@@ -38,7 +38,7 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 1. Read the ticket: check its column, check it's a change, read its `sdlc-mode`, find the feature it
    belongs to, and split it into items.
 2. Check it fits one PR. If it doesn't, it moves to the full pipeline.
-3. Bring up the isolated environment: the ticket's own Pane (its worktree and branch), and the repo's environment around it.
+3. Bring up the isolated environment: the ticket's own Pane (its worktree and branch), and the repo's environment around it. Started outside that Pane, the skill opens it and hands the run to a Claude agent there.
 4. Record how each item behaves today.
 5. Write the acceptance criteria into the PRD, then run the ambiguity check (`yi-sdlc:devils-advocate`).
 6. **Stop: the operator approves the acceptance criteria.**
@@ -75,4 +75,4 @@ The ticket's `sdlc-mode` sets how many of those stops happen:
 | `yi-sdlc:user-documentation` | Write user docs by walking the app's flows |
 | `yi-sdlc:run-application` | Run the app from any worktree, on its own ports |
 | `yi-sdlc:create-tickets` | File roadmap steps as tracker tickets (Epic, Feature or Task by size), linked by the roadmap's dependencies |
-| `yi-sdlc:process-tickets` | Rank the board's ready tickets and start the picks in Pane, a feature per Pane running `implement-feature` |
+| `yi-sdlc:process-tickets` | Rank the board's ready tickets and start the picks: the `implement-feature` command for a feature (it opens the feature's Pane), a tab in its feature's Pane for a task |
