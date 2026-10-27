@@ -171,8 +171,9 @@ base branch and `origin/<base>` its remote copy.
 
 Each ticket gets **its own Pane**: Pane creates and owns the worktree and branch, so the work shows up in
 Pane next to the operator's other work, and archiving the Pane removes it. Don't make the worktree
-yourself (`git worktree add`, `EnterWorktree` without a `path`), apart from the one case in § Bring it up
-where Pane can only adopt one.
+yourself (`git worktree add`, `EnterWorktree`), apart from the one case in § Bring it up where Pane can
+only adopt one. The work itself runs **in that Pane**, by a Claude agent there: a session started
+anywhere else opens the ticket's Pane and hands the ticket off to it (§ Hand it off to the Pane).
 Around that worktree, the repo's environment script adds what the app needs to run on its own.
 `environment.md` is its contract: run by its absolute path in the main clone, with `up`, `status`,
 `restart` and `down`, plus whatever more profile § Environment lists, and the rules for working in the
@@ -188,18 +189,52 @@ when it isn't on PATH.
 2. **Pane is running:** `runpane repos list --json` answers, and lists `<main>`. When Pane doesn't answer,
    ask the operator to open it and end your turn; don't fall back to a worktree of your own. When the repo
    isn't listed, add it: `runpane repos add --path <main> --yes --json`.
-3. **Find the ticket's Pane**, the first that holds:
-   - This session already runs in it: `PANE_SESSION_ID` is set, `git rev-parse --show-toplevel` isn't
-     `<main>`, and `git branch --show-current` is `<branch>` (`/yi-sdlc:process-tickets` starts features
-     this way).
+3. **This session already runs in the ticket's Pane** when `PANE_SESSION_ID` is set,
+   `git rev-parse --show-toplevel` isn't `<main>`, and `git branch --show-current` is `<branch>` (the
+   session the hand-off started, or the operator's own run in that Pane). Then `<worktree>` is
+   `git rev-parse --show-toplevel`; go on to step 4. Otherwise hand the ticket off to its Pane (§ Hand it
+   off to the Pane) and end your turn there: the rest of the run happens in the Pane.
+4. `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`, and keep the printed JSON.
+
+### Hand it off to the Pane
+
+A session outside the ticket's Pane (the main clone, another worktree) doesn't do the work itself. It has
+already done the skill's steps up to bringing up the environment: the ticket is read and owned by this
+skill, its mode isn't `developer`, `<branch>` is settled, and nothing sent it to the Blocked exit. Now it
+starts a Claude agent in the ticket's Pane on the same command, and stops.
+
+1. **The prompt.** Write `%TEMP%\yi-sdlc\<id>-start.md`:
+
+   ```
+   /yi-sdlc:implement-<fix|change|feature> <id> <the other arguments this run started with>
+
+   Handed off by /yi-sdlc:implement-<fix|change|feature> from <main>: you run in this ticket's own Pane, on
+   branch <branch>, made from origin/<base>.
+   - <each thing this session settled with the operator that the skill would otherwise ask again, one line
+     each, e.g. "The feature name is chosen: <slug>. Don't ask for it in step 2.">
+   ```
+
+   Your skill may add arguments (implement-feature adds `--stop-at-gates`). Keep the file: implement-feature's
+   gate driver sends it again after every gate.
+2. **The base branch is current.** `git -C <main> fetch origin`, so the Pane branches from today's
+   `origin/<base>`, not from a stale one: a branch from an old base redoes merged work.
+3. **Find or create the Pane**, the first that holds:
    - `runpane panes list --repo <main> --json` has a Pane whose `worktreePath` is on `<branch>`
-     (`git -C <worktreePath> branch --show-current`): a re-run.
-   - Neither: **create it.** The Pane's name is `<slug>` for a feature and `<id>-<slug>` for a fix or a
-     change; its tab is a plain shell, since this session does the work:
+     (`git -C <worktreePath> branch --show-current`): a re-run. When a Claude tab of it is still live
+     (`mcp__pane__agents_status`: `working`, `ready` or `blocked`), don't start a second one: give the operator
+     its link (`mcp__pane__links_create`) and tell them to go on there. Otherwise add the agent as a tab:
+
+     ```
+     runpane panels create --pane <pane id> --agent claude --title <id> --prompt-file <prompt file>
+       --wait-ready --no-focus --yes --json
+     ```
+
+   - None: **create it.** The Pane's name is `<slug>` for a feature and `<id>-<slug>` for a fix or a
+     change:
 
      ```
      runpane panes create --repo <main> --name <pane name> --branch <branch> --base-branch origin/<base>
-       --tool-command powershell --title shell --source agent --no-focus --yes --json
+       --agent claude --prompt-file <prompt file> --wait-ready --no-focus --yes --json
      ```
 
      `--branch` refuses a branch that exists. When `<branch>` exists already (from a run before Pane, or a
@@ -207,23 +242,34 @@ when it isn't on PATH.
      or, when none has it, one you add next to the Pane's others (the `worktreePath` folder of the repo's
      Panes, `<main>\worktrees\` by default): `git -C <main> worktree add <that folder>\<pane name>
      <branch>`. Then `runpane panes adopt --repo <main> --path <worktree> --name <pane name>
-     --tool-command powershell --launch --yes --json`.
-4. Keep the Pane's id and `<worktree>` (its `worktreePath`). A new Pane installs and builds first, and may
-   wait in Pane's setup queue: wait until `runpane panes list` no longer shows it `initializing`. In
+     --agent claude --launch --prompt-file <prompt file> --wait-ready --yes --json`.
+
+   `--yes` is right here: the operator asked for this ticket by running the command. Keep the Pane's id,
+   the agent's panel id and `<worktree>` (the Pane's `worktreePath`). A new Pane installs and builds first,
+   and may wait in Pane's setup queue: wait until `runpane panes list` no longer shows it `initializing`. In
    `error`, tell the operator what Pane says and stop.
-5. `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`, and keep the printed JSON.
+4. **Copy the git-ignored Claude files** the worktree lacks: `<main>\.claude\sdlc.local.md` (the
+   operator's yi-sdlc settings; without it the stages fall back to plugin defaults) and
+   `<main>\.claude\settings.local.json` (the tracker MCP approval and permissions). Don't overwrite ones
+   that exist.
+5. **Check the agent.** `mcp__pane__agents_status` on its panel. If Claude is sitting on a trust-folder or
+   MCP-approval prompt instead of working, don't answer it: tell the operator it is waiting for them in
+   that Pane.
+6. Whatever your skill adds after the agent starts (implement-feature: the `gates` tab).
+7. **End your turn** with one message: the Pane and panel, a clickable link (`mcp__pane__links_create`),
+   and that the run's questions, stops and merge approval now come up in that Pane. Don't go on with the
+   skill's steps from here (the environment, edits, the ticket comments): the Pane's session does them.
 
 ### Take it down
 
 - **Keeping the work** (a pause, the Blocked exit with work worth keeping): `ticket-env.ps1 down -Issue
-  <id>`. The Pane and its worktree stay, and the re-run finds them (step 3 above).
+  <id>`. The Pane and its worktree stay, and the re-run finds them (§ Hand it off to the Pane, step 3).
 - **Done with it** (after the merge, or the Blocked exit with nothing worth keeping): `ticket-env.ps1 down
-  -Issue <id>`, then `runpane panes archive --pane <pane id> --yes --json`, which removes the worktree
-  (and, for an adopted one, add `--remove-worktree`). It refuses when work would be lost (uncommitted
-  changes, commits that are neither pushed nor merged): say what it found rather than `--force`. Then
-  `git -C <main> branch -D <branch>`.
-- **When this session runs inside that Pane**, archiving it would end the session: leave the Pane, and
-  tell the operator to archive it once they are done with it.
+  -Issue <id>`. The session runs inside the ticket's Pane, and archiving it would end the session, so
+  leave the Pane and the branch, and tell the operator to archive the Pane once they are done with it
+  (`runpane panes archive --pane <pane id> --yes --json` removes the worktree; for an adopted one add
+  `--remove-worktree`; it refuses when work would be lost) and then `git -C <main> branch -D <branch>`.
+  A Blocked exit before the hand-off has no Pane or branch to leave.
 
 ## Get the issue ID
 
@@ -367,8 +413,9 @@ again.
 1. `gh pr merge <number> --squash` (squash-merge, and the remote branch is deleted), unless profile § Commits
    says the repo merges another way.
 2. `tracker.move <id> test` if the ticket has the `manual-qa` label, otherwise `tracker.move <id> merged`.
-3. Take the environment down, done with it (§ The isolated environment): `ticket-env.ps1 down`, archive
-   the Pane, then `git branch -D <branch>` in the main clone (it was squash-merged, so `-d` would refuse).
+3. Take the environment down, done with it (§ The isolated environment): `ticket-env.ps1 down`, then tell
+   the operator to archive the Pane and run `git -C <main> branch -D <branch>` (it was squash-merged, so
+   `-d` would refuse).
 4. Tell the operator: merged, the final column, and, if it went to `test`, what to check by hand. Their own
    checkout is untouched; `git pull` on `<base>` picks up the change. In `auto`, this message also carries
    the summary from § Ask to merge and the decisions taken in auto.
@@ -432,5 +479,5 @@ that isn't yours:
    keeping, take it down done with it, Pane and branch included, as far as they exist (nothing, when no
    environment was brought up yet).
 4. Tell the operator in one short message that it's blocked and why. When they answer on the ticket, they
-   run the same command again (the skills take a ticket from `blocked`); it finds the ticket's Pane and
-   brings the environment up in it again.
+   run the same command again (the skills take a ticket from `blocked`), in the ticket's Pane or from the
+   main clone, which hands it off to that Pane again.
