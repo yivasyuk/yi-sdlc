@@ -4,29 +4,29 @@
     {
       "id": 1,
       "name": "next-up-top5",
-      "prompt": "Check the tasker YouTrack board and tell me what I should work on next, top 5 by priority. DRY RUN: don't create Panes, worktrees or branches and don't change YouTrack; assume I pick #1 and show me exactly what you'd run to start it.",
-      "expected_output": "A ranked table from the live board (features first), notes on stale/blocked items (ts-12 looks done and blocks ts-13), and the exact runpane panes create command + implement-feature prompt for rank 1 (ts-10).",
+      "prompt": "Check the tasker YouTrack board and tell me what I should work on next, top 5 by priority. DRY RUN: don't create Panes, worktrees or branches and don't change YouTrack; assume I pick #1 and show me exactly what to run to start it.",
+      "expected_output": "A ranked table from the live board (features first), notes on stale/blocked items (ts-12 looks done and blocks ts-13), and for rank 1 (ts-10) the command /yi-sdlc:implement-feature ts-10 medium for the operator to run, which opens its own Pane.",
       "files": [],
       "assertions": [
         "Ranks ts-10 (agent-sessions) as #1",
         "Does not offer blocked features (ts-11, ts-13, ts-14, ts-15, ts-16) as startable",
         "Flags ts-12 as done but still open on the board",
-        "Gives a runpane panes create command with --branch feature/ts-10-agent-sessions",
-        "The Pane agent's prompt invokes /yi-sdlc:implement-feature ts-10 (the installed command name)",
+        "Gives the command /yi-sdlc:implement-feature ts-10 medium (the installed command name) for the operator to run",
+        "Gives no runpane panes create command of its own",
         "Created no Pane, branch or worktree and changed no ticket"
       ]
     },
     {
       "id": 2,
       "name": "start-ts10-medium",
-      "prompt": "Start ts-10 in Pane with implement-feature at medium depth. DRY RUN: don't create anything or touch YouTrack, just print the commands and the full prompt you'd send.",
-      "expected_output": "Confirms ts-10 is ready, a runpane panes create command with --branch feature/ts-10-agent-sessions and --name agent-sessions, and a prompt starting with /yi-sdlc:implement-feature ts-10 medium --stop-at-gates that tells the agent it already runs in the ticket's own Pane and worktree.",
+      "prompt": "Start ts-10 with implement-feature at medium depth. DRY RUN: don't create anything or touch YouTrack, just print what you'd run.",
+      "expected_output": "Confirms ts-10 is ready and prints /yi-sdlc:implement-feature ts-10 medium for the operator to run in the main clone, saying it opens the feature's own Pane and gates tab and that agent-sessions is the name to give when it asks.",
       "files": [],
       "assertions": [
-        "runpane command uses --branch feature/ts-10-agent-sessions and --name agent-sessions",
-        "Prompt starts with /yi-sdlc:implement-feature ts-10 medium",
-        "Prompt tells the agent it already runs in the ticket's own Pane and worktree",
-        "Plans to copy the git-ignored .claude/sdlc.local.md into the worktree",
+        "Prints the command /yi-sdlc:implement-feature ts-10 medium",
+        "Says the command opens the feature's own Pane (process-tickets doesn't create it)",
+        "Suggests agent-sessions as the feature name to give",
+        "Gives no runpane panes create command of its own",
         "Created no Pane, branch or worktree and changed no ticket"
       ]
     },
@@ -60,13 +60,13 @@
     },
     {
       "id": 5,
-      "name": "named-ticket-still-confirms",
-      "prompt": "Start ts-10 in Pane. Answer Cancel to any confirmation question.",
-      "expected_output": "Confirms ts-10 is ready, then asks one confirmation question naming the count (1 ticket), ts-10 and how it starts (new Pane agent-sessions, implement-feature medium); on Cancel it stops with nothing created.",
+      "name": "named-feature-prints-command",
+      "prompt": "Start ts-10. Answer Cancel to any confirmation question.",
+      "expected_output": "Confirms ts-10 is ready; since a feature isn't started here, it asks no confirmation and prints /yi-sdlc:implement-feature ts-10 medium for the operator to run, with nothing created.",
       "files": [],
       "assertions": [
-        "Asks a confirmation question before creating anything, although the arguments named ts-10",
-        "The question states the count and how ts-10 starts (new Pane agent-sessions, implement-feature medium)",
+        "Asks no confirmation question for the feature pick",
+        "Prints the command /yi-sdlc:implement-feature ts-10 medium",
         "Created no Pane, branch or worktree and changed no ticket"
       ]
     },
@@ -74,7 +74,7 @@
       "id": 6,
       "name": "auto-picks-top",
       "prompt": "/yi-sdlc:process-tickets --auto 2 --dry-run",
-      "expected_output": "No pick or confirmation question; takes the top 2 non-colliding candidates in rank order (ts-10 first), prints one 'Starting 2 tickets: ...' line, then the exact commands and prompts; offers the ts-12 board move without making it.",
+      "expected_output": "No pick or confirmation question; takes the top 2 non-colliding candidates in rank order (ts-10 first), prints one 'Picked 2 tickets: ...' line, then the implement-feature commands (and the task tab call, if a task is picked); offers the ts-12 board move without making it.",
       "files": [],
       "assertions": [
         "Asks no pick or confirmation question",

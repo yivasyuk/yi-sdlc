@@ -2,8 +2,8 @@
 name: implement-change
 description: >-
   Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
-  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own Pane and worktree): check
-  it fits one PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
+  tracker the repo's profile maps) end to end by its ID in an isolated environment (its own Pane and
+  worktree, which it opens and hands the run to when started outside it): check it fits one PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
   review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back on the
   ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
   sets the autonomy: auto (self-approves the ACs and merges, stops only on critical issues), semi-auto
@@ -104,6 +104,11 @@ Otherwise `tracker.move <id> in-progress`.
 Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
 is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
 the printed JSON.
+
+When this session isn't in that Pane (you started it from the main clone), this is where it ends: open the
+Pane and hand the ticket off to a Claude agent there (workflow § Hand it off to the Pane), with the branch
+slug in the prompt's notes so the Pane's session takes the same `<branch>`. That session runs this skill
+again from step 0 and does the rest.
 
 ## 4. Record today's behaviour
 
