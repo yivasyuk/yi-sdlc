@@ -1370,13 +1370,15 @@ $content
         $tab.Shown = $lang
         Update-FormHeight
     }
-    function Update-TabTranslation($tab) {
+    $translateInto = @{ uk = 'Ukrainian (українська мова; never Russian)'; en = 'English' }
+    function Update-TabTranslation($tab, [switch]$Retry) {
         $lang = $tab.Lang
+        Show-Status '' $false $tab  # an earlier translation's state no longer applies
         if ($tab.Shown -eq $lang) { return }
         if ($lang -eq $tab.SourceLang) { Show-TabTexts $tab @($tab.Texts | ForEach-Object { $_.Original }) $lang; return }
         if ($tab.Translations.ContainsKey($lang)) { Show-TabTexts $tab $tab.Translations[$lang] $lang; return }
         if (@($script:translateJobs | Where-Object { $_.Tab -eq $tab -and $_.Lang -eq $lang }).Count) { return }
-        $system = "You translate the texts of a question form into $($languageNames[$lang]). The input is a JSON " +
+        $system = "You translate the texts of a question form into $($translateInto[$lang]). The input is a JSON " +
             'array of strings. Reply with only a JSON array of the same length and order, each string translated, ' +
             'no code fence. Keep code, identifiers, commands, file and path names, ticket IDs, spec codes ' +
             '(AC-03, ADR-0019, PRD §5), slash commands, names of people, products and teams, and markdown as they are.'
@@ -1384,7 +1386,7 @@ $content
         Show-Status $ui[$lang].Translating $false $tab
         try {
             $job = Start-HeadlessClaude $system (ConvertTo-Json -InputObject $originals -Compress)
-            $job += @{ Tab = $tab; Lang = $lang; Count = $originals.Count }
+            $job += @{ Tab = $tab; Lang = $lang; Expected = $originals.Count; Retried = [bool]$Retry }  # not Count: that is the table's own
             [void]$script:translateJobs.Add($job)
             $translateTimer.Start()
         } catch {
@@ -1409,13 +1411,20 @@ $content
                     $texts = @($parsed | ForEach-Object { "$_" })
                 } catch {}
             }
-            if ($texts -and $texts.Count -eq $job.Count) {
+            # Its status only matters while the tab still shows that language.
+            $current = $tab.Lang -eq $job.Lang
+            # Russian-only letters in a Ukrainian translation: the wrong language, asked again once.
+            if ($texts -and $job.Lang -eq 'uk' -and ($texts -join ' ') -cmatch '[ыэъёЫЭЪЁ]') {
+                Write-Log "ask-dialog: translation into uk came back in Russian: $($texts -join ' | ')"
+                if ($current -and -not $job.Retried) { Update-TabTranslation $tab -Retry; continue }
+                $texts = $null
+            }
+            if ($texts -and $texts.Count -eq $job.Expected) {
                 $tab.Translations[$job.Lang] = $texts
-                Show-Status '' $false $tab
-                if ($tab.Lang -eq $job.Lang) { Show-TabTexts $tab $texts $job.Lang }
+                if ($current) { Show-Status '' $false $tab; Show-TabTexts $tab $texts $job.Lang }
             } else {
-                Write-Log "ask-dialog: translation into $($job.Lang) failed: $(if ($done) { "$($job.Output.Result)".Trim() } else { 'timed out' })"
-                Show-Status $ui[$job.Lang].TranslateFailed $true $tab
+                Write-Log "ask-dialog: translation into $($job.Lang) failed ($($texts.Count) of $($job.Expected) texts): $(if ($done) { "$($job.Output.Result)".Trim() } else { 'timed out' })"
+                if ($current) { Show-Status $ui[$job.Lang].TranslateFailed $true $tab }
             }
         }
         if ($script:translateJobs.Count -eq 0) { $translateTimer.Stop() }
