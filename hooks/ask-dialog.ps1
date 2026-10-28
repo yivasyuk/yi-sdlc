@@ -1322,6 +1322,8 @@ $content
         $flag.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 6), 0)
         $flag.Cursor = [Windows.Forms.Cursors]::Hand
         $flag.Tag = $lang
+        # Double-buffered (a protected property), so the spinner's repaints don't show the flag half-drawn.
+        $flag.GetType().GetProperty('DoubleBuffered', [Reflection.BindingFlags]'Instance, NonPublic').SetValue($flag, $true)
         $tips.SetToolTip($flag, $flagTips[$lang])
         $flag.add_Paint({
             param($sender, $e)
@@ -1408,12 +1410,14 @@ $content
     $translateTimer = New-Object Windows.Forms.Timer
     $translateTimer.Interval = 60  # also the flag spinner's frame rate
     $translateTimer.add_Tick({
-        # Their flags repaint each tick: the spinner turns, and goes once the job is done.
-        foreach ($job in @($script:translateJobs)) { foreach ($f in $job.Tab.Flags) { if (-not $f.IsDisposed) { $f.Invalidate() } } }
+        # Only the flag of the job's language repaints each tick: the spinner turns, and goes once the job is done.
+        $repaintFlag = { param($job) foreach ($f in $job.Tab.Flags) { if ($f.Tag -eq $job.Lang -and -not $f.IsDisposed) { $f.Invalidate() } } }
+        foreach ($job in @($script:translateJobs)) { & $repaintFlag $job }
         foreach ($job in @($script:translateJobs)) {
             $done = $job.Output.IsCompleted
             if (-not $done -and $job.Watch.Elapsed.TotalSeconds -lt 120) { continue }
             $script:translateJobs.Remove($job)
+            & $repaintFlag $job
             if (-not $done) { try { $job.Process.Kill() } catch {} }
             $tab = $job.Tab
             if (-not $script:tabs.Contains($tab)) { continue }
