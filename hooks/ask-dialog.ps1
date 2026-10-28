@@ -18,8 +18,8 @@
 #                       with Submit or Close the session's language (marks in session-language\<session id>,
 #                       swept after 7 days, carried over /clear too). Claude is told to write in it, reminded
 #                       with every later answer, and the session's later tabs open in it. Questions, options and
-#                       descriptions in the other language are shown translated (headless `claude -p`, Haiku);
-#                       the answers keep the original texts.
+#                       descriptions in the other language are shown translated (headless `claude -p`, Haiku;
+#                       a spinner turns on the flag meanwhile); the answers keep the original texts.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
 #                       Double-click a word and keep the button down: its Ukrainian translation (headless
 #                       `claude -p`, Haiku) shows beside the pointer.
@@ -1312,7 +1312,10 @@ $content
         RedSaltire = New-Object Drawing.Pen([Drawing.Color]::FromArgb(200, 16, 46), ($flagSize.Height * 0.07))
         Dim       = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(150, [Drawing.SystemColors]::Control))
         Border    = New-Object Drawing.Pen([Drawing.Color]::FromArgb(51, 65, 85))
+        Busy      = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(130, 0, 0, 0))
+        Spinner   = New-Object Drawing.Pen([Drawing.Color]::White, [Math]::Max(2, (& $px 2)))
     }
+    $flagPaint.Spinner.StartCap = 'Round'; $flagPaint.Spinner.EndCap = 'Round'
     function New-LanguageFlag([string]$lang) {
         $flag = New-Object Windows.Forms.Panel
         $flag.Size = $flagSize
@@ -1342,8 +1345,17 @@ $content
                 $gr.FillRectangle($flagPaint.UkRed, 0, [int](($fh - $red) / 2), $fw, $red)
             }
             # The tab's language is framed; the other is faded.
-            if ((Get-OwnerTab $sender).Lang -eq $sender.Tag) { $gr.DrawRectangle($flagPaint.Border, 0, 0, $fw - 1, $fh - 1) }
+            $owner = Get-OwnerTab $sender
+            if ($owner.Lang -eq $sender.Tag) { $gr.DrawRectangle($flagPaint.Border, 0, 0, $fw - 1, $fh - 1) }
             else { $gr.FillRectangle($flagPaint.Dim, 0, 0, $fw, $fh) }
+            # A translation into this flag's language under way: a spinner on it (the translate timer turns it).
+            if (@($script:translateJobs | Where-Object { $_.Tab -eq $owner -and $_.Lang -eq $sender.Tag }).Count) {
+                $gr.FillRectangle($flagPaint.Busy, 0, 0, $fw, $fh)
+                $gr.SmoothingMode = 'AntiAlias'
+                $d = [int]($fh * 0.7)
+                $gr.DrawArc($flagPaint.Spinner, [int](($fw - $d) / 2), [int](($fh - $d) / 2), $d, $d,
+                    ([Environment]::TickCount / 3) % 360, 270)
+            }
         })
         $flag.add_Click({ param($sender) Set-TabLanguage (Get-OwnerTab $sender) $sender.Tag })
         $flag
@@ -1394,8 +1406,10 @@ $content
         }
     }
     $translateTimer = New-Object Windows.Forms.Timer
-    $translateTimer.Interval = 200
+    $translateTimer.Interval = 60  # also the flag spinner's frame rate
     $translateTimer.add_Tick({
+        # Their flags repaint each tick: the spinner turns, and goes once the job is done.
+        foreach ($job in @($script:translateJobs)) { foreach ($f in $job.Tab.Flags) { if (-not $f.IsDisposed) { $f.Invalidate() } } }
         foreach ($job in @($script:translateJobs)) {
             $done = $job.Output.IsCompleted
             if (-not $done -and $job.Watch.Elapsed.TotalSeconds -lt 120) { continue }
