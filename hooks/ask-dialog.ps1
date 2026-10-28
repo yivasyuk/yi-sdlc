@@ -14,6 +14,10 @@
 #                       without a window (marks in keep-recommended\<session id>, swept after 7 days), and
 #                       Claude is told to work in auto mode. A question headed "Critical" is still asked.
 #                       /clear starts a new session id; the -SessionStart hook carries the mark over to it.
+#   Language flags    - Ukrainian and British, left of Keep Recommended: a click switches the tab's texts, and
+#                       with Submit or Close the session's language (marks in session-language\<session id>,
+#                       swept after 7 days, carried over /clear too). Claude is told to write in it, reminded
+#                       with every later answer, and the session's later tabs open in it.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
 #                       Double-click a word and keep the button down: its Ukrainian translation (headless
 #                       `claude -p`, Haiku) shows beside the pointer.
@@ -27,7 +31,7 @@
 # -SessionStart is the SessionStart hook: it records each session per Claude process and, on a /clear, copies
 # the cleared session's Keep Recommended mark to the new one, and tells a session with the mark it is in auto mode.
 # -Auto submit|close builds the window in this process without showing it (for testing); env
-# ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
+# ASK_DIALOG_LANG=uk|en clicks that flag, ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
 # ASK_DIALOG_WORD=<word> translates that word of the first question as if held after a double-click, ASK_DIALOG_MORE=<payload.json>;... adds more tabs (not opened)
 # and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also the
 # reference window as <png>-ref.png). The window process logs its failures to ask-dialog.log in the data dir.
@@ -84,6 +88,35 @@ $keepRecommendedNote = 'The user ticked Keep Recommended: treat it as auto mode 
     'checkpoints or gates to wait for them: go on with the recommended path and record what you decided. ' +
     'Only a critical question still reaches them: ask it with AskUserQuestion with the header "Critical".'
 
+# The session's language, chosen with a flag in the window: marks in session-language\<session id> holding
+# uk or en (swept after 7 days), carried over /clear like Keep Recommended.
+$sessionLanguageDir = Join-Path $dataDir 'session-language'
+$languageNames = @{ uk = 'Ukrainian'; en = 'English' }
+function Get-SessionLanguage([string]$sessionId) {
+    if ($sessionId -notmatch '^[\w-]+$') { return $null }
+    $mark = Join-Path $sessionLanguageDir $sessionId
+    if (-not (Test-Path -LiteralPath $mark)) { return $null }
+    $value = [IO.File]::ReadAllText($mark).Trim()
+    if ($languageNames.ContainsKey($value)) { $value } else { $null }
+}
+function Set-SessionLanguage([string]$sessionId, [string]$lang) {
+    if ($sessionId -notmatch '^[\w-]+$') { return }
+    [void](New-Item -ItemType Directory -Force -Path $sessionLanguageDir)
+    Get-ChildItem -LiteralPath $sessionLanguageDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
+    [IO.File]::WriteAllText((Join-Path $sessionLanguageDir $sessionId), $lang)
+}
+# What Claude is told: in full on the answer that chose it and at the start of a session that has it, and a
+# reminder with every later answer.
+function Get-SessionLanguageNote([string]$lang, [switch]$Full) {
+    $name = $languageNames[$lang]
+    if (-not $Full) { return "Session language: $name, chosen by the user in the question dialog; keep writing to them in $name." }
+    "The user chose $name for the rest of this session (a flag in the question dialog). From now on write to " +
+        "them in ${name}: replies, AskUserQuestion questions and options, and what the yi-sdlc skills produce " +
+        "(documents, tracker comments, PR titles and bodies). This overrides the yi-sdlc language given at the " +
+        "session start. Code, identifiers, commands, file names and quoted text stay as they are; a document " +
+        "that already exists keeps its language unless the user asks to translate it."
+}
+
 # The Claude Code process this hook runs under, as "<pid>-<start ticks>" so a reused PID gets a new key.
 # It stays the same across /clear, while the session id changes.
 function Get-ClaudeProcessKey {
@@ -98,8 +131,9 @@ function Get-ClaudeProcessKey {
 }
 
 # The SessionStart hook: every start records its session id per Claude process (keep-recommended\sessions\
-# <process key>). On a /clear, the id recorded before it is the session just cleared, and a Keep Recommended
-# mark it had is copied to the new session. A session that has the mark is told so, so it starts in auto mode.
+# <process key>). On a /clear, the id recorded before it is the session just cleared, and the Keep Recommended
+# and language marks it had are copied to the new session. A session that has them is told so, so it starts in
+# auto mode and in its language.
 if ($SessionStart) {
     try {
         $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -110,13 +144,20 @@ if ($SessionStart) {
             Get-ChildItem -LiteralPath $sessionsDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
             $record = Join-Path $sessionsDir $key
             if ($payload.source -eq 'clear' -and (Test-Path -LiteralPath $record)) {
-                if (Test-KeepRecommended ([IO.File]::ReadAllText($record).Trim())) { Set-KeepRecommendedMark $payload.session_id }
+                $cleared = [IO.File]::ReadAllText($record).Trim()
+                if (Test-KeepRecommended $cleared) { Set-KeepRecommendedMark $payload.session_id }
+                $lang = Get-SessionLanguage $cleared
+                if ($lang) { Set-SessionLanguage $payload.session_id $lang }
             }
             [IO.File]::WriteAllText($record, $payload.session_id)
         }
-        if (Test-KeepRecommended $payload.session_id) {
+        $notes = @()
+        if (Test-KeepRecommended $payload.session_id) { $notes += $keepRecommendedNote }
+        $lang = Get-SessionLanguage $payload.session_id
+        if ($lang) { $notes += Get-SessionLanguageNote $lang -Full }
+        if ($notes.Count) {
             [Console]::Out.Write((ConvertTo-Json -Compress -InputObject @{
-                hookSpecificOutput = @{ hookEventName = 'SessionStart'; additionalContext = $keepRecommendedNote }
+                hookSpecificOutput = @{ hookEventName = 'SessionStart'; additionalContext = $notes -join ' ' }
             }))
         }
     } catch {
@@ -226,10 +267,12 @@ if (-not $Serve) {
                 $rec = Get-Recommended $q
                 if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
             }
-            [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
-                'These questions were not shown to the user: each was answered with its recommended option (the ' +
+            $context = 'These questions were not shown to the user: each was answered with its recommended option (the ' +
                 'first option when none is marked; a multi-select question with none marked is left unanswered). ' +
-                $keepRecommendedNote)))
+                $keepRecommendedNote
+            $lang = Get-SessionLanguage $payload.session_id
+            if ($lang) { $context += ' ' + (Get-SessionLanguageNote $lang) }
+            [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' $context))
             exit 0
         }
 
@@ -1242,17 +1285,80 @@ $content
         $script:refCache = $tab.RefCache
     }
 
+    # Language flags, Ukrainian and British, drawn here. A click switches the tab's texts and, with Submit or
+    # Close, the session's language: Claude is told to write in it, and the session's later tabs open in it.
+    $flagSize = New-Object Drawing.Size((& $px 24), (& $px 16))
+    $flagTips = @{
+        uk = 'Українська: Claude пише українською до кінця сесії (також після /clear)'
+        en = 'English: Claude writes in English for the rest of this session (also after /clear)'
+    }
+    $flagPaint = @{
+        UaBlue    = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(0, 87, 183))
+        UaYellow  = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(255, 215, 0))
+        UkBlue    = [Drawing.Color]::FromArgb(1, 33, 105)
+        UkRed     = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(200, 16, 46))
+        White     = [Drawing.Brushes]::White
+        Saltire   = New-Object Drawing.Pen([Drawing.Color]::White, ($flagSize.Height * 0.2))
+        RedSaltire = New-Object Drawing.Pen([Drawing.Color]::FromArgb(200, 16, 46), ($flagSize.Height * 0.07))
+        Dim       = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(150, [Drawing.SystemColors]::Control))
+        Border    = New-Object Drawing.Pen([Drawing.Color]::FromArgb(51, 65, 85))
+    }
+    function New-LanguageFlag([string]$lang) {
+        $flag = New-Object Windows.Forms.Panel
+        $flag.Size = $flagSize
+        $flag.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 6), 0)
+        $flag.Cursor = [Windows.Forms.Cursors]::Hand
+        $flag.Tag = $lang
+        $tips.SetToolTip($flag, $flagTips[$lang])
+        $flag.add_Paint({
+            param($sender, $e)
+            $gr = $e.Graphics
+            $fw = $sender.Width; $fh = $sender.Height
+            if ($sender.Tag -eq 'uk') {
+                $gr.FillRectangle($flagPaint.UaBlue, 0, 0, $fw, [int]($fh / 2))
+                $gr.FillRectangle($flagPaint.UaYellow, 0, [int]($fh / 2), $fw, $fh - [int]($fh / 2))
+            } else {
+                $gr.Clear($flagPaint.UkBlue)
+                $gr.SmoothingMode = 'AntiAlias'
+                foreach ($pen in $flagPaint.Saltire, $flagPaint.RedSaltire) {
+                    $gr.DrawLine($pen, 0, 0, $fw, $fh)
+                    $gr.DrawLine($pen, 0, $fh, $fw, 0)
+                }
+                $gr.SmoothingMode = 'None'
+                $cross = [int]($fh / 3); $red = [int]($fh / 5)
+                $gr.FillRectangle($flagPaint.White, [int](($fw - $cross) / 2), 0, $cross, $fh)
+                $gr.FillRectangle($flagPaint.White, 0, [int](($fh - $cross) / 2), $fw, $cross)
+                $gr.FillRectangle($flagPaint.UkRed, [int](($fw - $red) / 2), 0, $red, $fh)
+                $gr.FillRectangle($flagPaint.UkRed, 0, [int](($fh - $red) / 2), $fw, $red)
+            }
+            # The tab's language is framed; the other is faded.
+            if ((Get-OwnerTab $sender).Lang -eq $sender.Tag) { $gr.DrawRectangle($flagPaint.Border, 0, 0, $fw - 1, $fh - 1) }
+            else { $gr.FillRectangle($flagPaint.Dim, 0, 0, $fw, $fh) }
+        })
+        $flag.add_Click({ param($sender) Set-TabLanguage (Get-OwnerTab $sender) $sender.Tag })
+        $flag
+    }
+    function Set-TabLanguage($tab, [string]$lang) {
+        $tab.Lang = $lang
+        $tab.LangChosen = $true
+        Set-TabTexts $tab
+        foreach ($f in $tab.Flags) { $f.Invalidate() }
+        Update-WindowTitle
+    }
+
     function Add-QuestionTab($payload, $request) {
         $questions = @($payload.tool_input.questions)
         $found = Get-QuestionContext $payload.cwd
         $context = $found.Context
         $allText = ($questions | ForEach-Object { $_.question; $_.header; @($_.options) | ForEach-Object { $_.label; $_.description } }) -join ' '
         $second = if ($context['Feature']) { $context['Feature'] } else { $context['Branch'] }
-        # The tab's own texts (buttons, captions) speak the questions' language.
+        # The tab's own texts (buttons, captions) speak the session's language, else the questions'.
+        $sessionLang = Get-SessionLanguage $payload.session_id
         $tab = @{
             IsTab = $true; Payload = $payload; Request = $request; Context = $context
             Title = $context['Project'] + $(if ($second) { " · $second" })
-            Lang = $(if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' })
+            Lang = $(if ($sessionLang) { $sessionLang } elseif ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' })
+            SessionLang = $sessionLang; LangChosen = $false
             Visited = $false; RefCache = @{}; Entries = @(); OtherLabels = @(); RefCaptions = @()
             Attachments = [Collections.ArrayList]::new(); ImageCount = 0
         }
@@ -1430,27 +1536,36 @@ $content
         })
         $tab.NotePanel = $notePanel; $tab.NoteLabel = $noteLabel; $tab.Note = $note; $tab.AttachPanel = $attachPanel
 
-        # The bottom row: Keep Recommended on the left, the buttons (and the status) from the right.
+        # The bottom row: the language flags and Keep Recommended on the left, the buttons (and the status)
+        # from the right.
         $bar = New-Object Windows.Forms.TableLayoutPanel
         $bar.Dock = 'Bottom'
         $bar.AutoSize = $true
-        $bar.ColumnCount = 2
+        $bar.ColumnCount = 3
         $bar.RowCount = 1
+        [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
         [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
         [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
         [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
         $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
+        $flags = New-Object Windows.Forms.FlowLayoutPanel
+        $flags.AutoSize = $true
+        $flags.WrapContents = $false
+        $flags.Anchor = 'Left'
+        $flags.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 10), 0)
+        $tab.Flags = @('uk', 'en' | ForEach-Object { $f = New-LanguageFlag $_; $flags.Controls.Add($f); $f })
+        $bar.Controls.Add($flags, 0, 0)
         $keepRecommended = New-Object Windows.Forms.CheckBox
         $keepRecommended.AutoSize = $true
         $keepRecommended.Anchor = 'Left'
         $keepRecommended.Checked = [bool]$env:ASK_DIALOG_KEEP
-        $bar.Controls.Add($keepRecommended, 0, 0)
+        $bar.Controls.Add($keepRecommended, 1, 0)
         $buttons = New-Object Windows.Forms.FlowLayoutPanel
         $buttons.FlowDirection = 'RightToLeft'
         $buttons.AutoSize = $true
         $buttons.Dock = 'Fill'
         $buttons.Margin = New-Object Windows.Forms.Padding(0)
-        $bar.Controls.Add($buttons, 1, 0)
+        $bar.Controls.Add($buttons, 2, 0)
         $mkButton = {
             $b = New-Object Windows.Forms.Button
             $b.AutoSize = $true
@@ -1553,6 +1668,16 @@ $content
                 (($tab.Attachments | ForEach-Object { "[Image #$($_.Number)]: $($_.Path)" }) -join "`n")
         }
         $noteContext = if ($noteText -or $imageBlock) { "Additional message from the user, written in the question dialog:`n$noteText$imageBlock" } else { '' }
+
+        # A flag switched away from the session's language: it becomes the session's, with either button.
+        if ($tab.LangChosen -and $tab.Lang -ne $tab.SessionLang) {
+            Set-SessionLanguage $tab.Payload.session_id $tab.Lang
+            $langNote = Get-SessionLanguageNote $tab.Lang -Full
+            $noteContext = if ($noteContext) { "$noteContext`n`n$langNote" } else { $langNote }
+        } elseif ($tab.SessionLang -and $mode -ne 'close') {
+            $langNote = Get-SessionLanguageNote $tab.SessionLang
+            $noteContext = if ($noteContext) { "$noteContext`n`n$langNote" } else { $langNote }
+        }
 
         if ($mode -eq 'close') {
             # Closed without answering: the terminal prompt follows, but the message still reaches Claude.
@@ -1678,6 +1803,7 @@ $content
         foreach ($more in @("$env:ASK_DIALOG_MORE" -split ';' | Where-Object { $_ })) {
             [void](Add-QuestionTab ([IO.File]::ReadAllText($more) | ConvertFrom-Json) $null)
         }
+        if ($env:ASK_DIALOG_LANG) { Set-TabLanguage $tab $env:ASK_DIALOG_LANG }
         if ($env:ASK_DIALOG_NOTE) { $tab.Note.Text = $env:ASK_DIALOG_NOTE + ' ' }
         if ($env:ASK_DIALOG_IMAGE) { $tab.Note.SelectionStart = $tab.Note.TextLength; Add-Attachment $tab $env:ASK_DIALOG_IMAGE $false }
         if ($env:ASK_DIALOG_WORD) {
