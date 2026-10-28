@@ -14,6 +14,12 @@
 #                       without a window (marks in keep-recommended\<session id>, swept after 7 days), and
 #                       Claude is told to work in auto mode. A question headed "Critical" is still asked.
 #                       /clear starts a new session id; the -SessionStart hook carries the mark over to it.
+#   Language flags    - Ukrainian and British, left of Keep Recommended: a click switches the tab's texts, and
+#                       with Submit or Close the session's language (marks in session-language\<session id>,
+#                       swept after 7 days, carried over /clear too). Claude is told to write in it, reminded
+#                       with every later answer, and the session's later tabs open in it. Questions, options and
+#                       descriptions in the other language are shown translated (headless `claude -p`, Haiku);
+#                       the answers keep the original texts.
 #   Read-only texts   - selectable; releasing a selection copies it to the clipboard (Ctrl+A selects all).
 #                       Double-click a word and keep the button down: its Ukrainian translation (headless
 #                       `claude -p`, Haiku) shows beside the pointer.
@@ -27,7 +33,7 @@
 # -SessionStart is the SessionStart hook: it records each session per Claude process and, on a /clear, copies
 # the cleared session's Keep Recommended mark to the new one, and tells a session with the mark it is in auto mode.
 # -Auto submit|close builds the window in this process without showing it (for testing); env
-# ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
+# ASK_DIALOG_LANG=uk|en clicks that flag, ASK_DIALOG_NOTE=<text> fills the message field, ASK_DIALOG_IMAGE=<file> attaches an image,
 # ASK_DIALOG_WORD=<word> translates that word of the first question as if held after a double-click, ASK_DIALOG_MORE=<payload.json>;... adds more tabs (not opened)
 # and ASK_DIALOG_SHOT=<png> saves a picture (with ASK_DIALOG_OPEN=<reference>, e.g. AC-03, also the
 # reference window as <png>-ref.png). The window process logs its failures to ask-dialog.log in the data dir.
@@ -84,6 +90,35 @@ $keepRecommendedNote = 'The user ticked Keep Recommended: treat it as auto mode 
     'checkpoints or gates to wait for them: go on with the recommended path and record what you decided. ' +
     'Only a critical question still reaches them: ask it with AskUserQuestion with the header "Critical".'
 
+# The session's language, chosen with a flag in the window: marks in session-language\<session id> holding
+# uk or en (swept after 7 days), carried over /clear like Keep Recommended.
+$sessionLanguageDir = Join-Path $dataDir 'session-language'
+$languageNames = @{ uk = 'Ukrainian'; en = 'English' }
+function Get-SessionLanguage([string]$sessionId) {
+    if ($sessionId -notmatch '^[\w-]+$') { return $null }
+    $mark = Join-Path $sessionLanguageDir $sessionId
+    if (-not (Test-Path -LiteralPath $mark)) { return $null }
+    $value = [IO.File]::ReadAllText($mark).Trim()
+    if ($languageNames.ContainsKey($value)) { $value } else { $null }
+}
+function Set-SessionLanguage([string]$sessionId, [string]$lang) {
+    if ($sessionId -notmatch '^[\w-]+$') { return }
+    [void](New-Item -ItemType Directory -Force -Path $sessionLanguageDir)
+    Get-ChildItem -LiteralPath $sessionLanguageDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
+    [IO.File]::WriteAllText((Join-Path $sessionLanguageDir $sessionId), $lang)
+}
+# What Claude is told: in full on the answer that chose it and at the start of a session that has it, and a
+# reminder with every later answer.
+function Get-SessionLanguageNote([string]$lang, [switch]$Full) {
+    $name = $languageNames[$lang]
+    if (-not $Full) { return "Session language: $name, chosen by the user in the question dialog; keep writing to them in $name." }
+    "The user chose $name for the rest of this session (a flag in the question dialog). From now on write to " +
+        "them in ${name}: replies, AskUserQuestion questions and options, and what the yi-sdlc skills produce " +
+        "(documents, tracker comments, PR titles and bodies). This overrides the yi-sdlc language given at the " +
+        "session start. Code, identifiers, commands, file names and quoted text stay as they are; a document " +
+        "that already exists keeps its language unless the user asks to translate it."
+}
+
 # The Claude Code process this hook runs under, as "<pid>-<start ticks>" so a reused PID gets a new key.
 # It stays the same across /clear, while the session id changes.
 function Get-ClaudeProcessKey {
@@ -98,8 +133,9 @@ function Get-ClaudeProcessKey {
 }
 
 # The SessionStart hook: every start records its session id per Claude process (keep-recommended\sessions\
-# <process key>). On a /clear, the id recorded before it is the session just cleared, and a Keep Recommended
-# mark it had is copied to the new session. A session that has the mark is told so, so it starts in auto mode.
+# <process key>). On a /clear, the id recorded before it is the session just cleared, and the Keep Recommended
+# and language marks it had are copied to the new session. A session that has them is told so, so it starts in
+# auto mode and in its language.
 if ($SessionStart) {
     try {
         $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -110,13 +146,20 @@ if ($SessionStart) {
             Get-ChildItem -LiteralPath $sessionsDir -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force
             $record = Join-Path $sessionsDir $key
             if ($payload.source -eq 'clear' -and (Test-Path -LiteralPath $record)) {
-                if (Test-KeepRecommended ([IO.File]::ReadAllText($record).Trim())) { Set-KeepRecommendedMark $payload.session_id }
+                $cleared = [IO.File]::ReadAllText($record).Trim()
+                if (Test-KeepRecommended $cleared) { Set-KeepRecommendedMark $payload.session_id }
+                $lang = Get-SessionLanguage $cleared
+                if ($lang) { Set-SessionLanguage $payload.session_id $lang }
             }
             [IO.File]::WriteAllText($record, $payload.session_id)
         }
-        if (Test-KeepRecommended $payload.session_id) {
+        $notes = @()
+        if (Test-KeepRecommended $payload.session_id) { $notes += $keepRecommendedNote }
+        $lang = Get-SessionLanguage $payload.session_id
+        if ($lang) { $notes += Get-SessionLanguageNote $lang -Full }
+        if ($notes.Count) {
             [Console]::Out.Write((ConvertTo-Json -Compress -InputObject @{
-                hookSpecificOutput = @{ hookEventName = 'SessionStart'; additionalContext = $keepRecommendedNote }
+                hookSpecificOutput = @{ hookEventName = 'SessionStart'; additionalContext = $notes -join ' ' }
             }))
         }
     } catch {
@@ -226,10 +269,12 @@ if (-not $Serve) {
                 $rec = Get-Recommended $q
                 if ($rec.Count -gt 0) { $answers[$q.question] = $rec -join ', ' }
             }
-            [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' (
-                'These questions were not shown to the user: each was answered with its recommended option (the ' +
+            $context = 'These questions were not shown to the user: each was answered with its recommended option (the ' +
                 'first option when none is marked; a multi-select question with none marked is left unanswered). ' +
-                $keepRecommendedNote)))
+                $keepRecommendedNote
+            $lang = Get-SessionLanguage $payload.session_id
+            if ($lang) { $context += ' ' + (Get-SessionLanguageNote $lang) }
+            [Console]::Out.Write((Get-AnswersOutput $toolInput $answers 'Answered with the recommended options (Keep Recommended)' $context))
             exit 0
         }
 
@@ -409,6 +454,7 @@ namespace ClaudeHook {
             Copied = 'Copied to clipboard'
             References = 'References:'; OpenFile = 'Open the file'
             KeepRecommended = 'Keep Recommended'
+            Translating = 'Translating…'; TranslateFailed = 'Translation failed; the original is shown'
             KeepRecommendedTip = 'Ticked when you press Submit: every later question in this session (also after /clear) is answered with its recommended option, without asking you, and Claude works on its own (auto mode). Only critical questions are still asked.'
         }
         uk = @{
@@ -420,6 +466,7 @@ namespace ClaudeHook {
             Copied = 'Скопійовано в буфер обміну'
             References = 'Посилання:'; OpenFile = 'Відкрити файл'
             KeepRecommended = 'Залишати рекомендовані'
+            Translating = 'Перекладаю…'; TranslateFailed = 'Не вдалося перекласти; показано оригінал'
             KeepRecommendedTip = 'Якщо позначено під час «Надіслати»: усі наступні питання цієї сесії (також після /clear) отримають рекомендовану відповідь, без запитань до вас, і Claude працює сам (автоматичний режим). Питатиме лише про критичне.'
         }
     }
@@ -561,9 +608,21 @@ namespace ClaudeHook {
         if ($script:wordCache.ContainsKey($key)) { $wordTip.Show("$word → $($script:wordCache[$key])", $box, $at, 15000); return }
         $wordTip.Show("$word → …", $box, $at, 60000)
 
-        $quote = { param($s) '"' + ($s -replace '"', '\"') + '"' }
         $system = 'You translate one English word or short phrase into Ukrainian, as it is meant in the given text. ' +
             'Reply with the translation only: a word or a few, plus one alternative after a comma only when the meaning is unclear.'
+        try {
+            $job = Start-HeadlessClaude $system "Word: $word`nText: $(Get-Copied $box.Text)"
+            $job += @{ Word = $word; Key = $key; Box = $box; At = $at }
+            [void]$script:wordJobs.Add($job)
+            $wordTimer.Start()
+        } catch {
+            $wordTip.Show("$word → ?", $box, $at, 5000)
+        }
+    }
+    # A headless `claude -p` (Haiku, no tools, no thinking) given a system prompt and stdin; returns its
+    # process and its pending output, for a timer to collect.
+    function Start-HeadlessClaude([string]$system, [string]$prompt) {
+        $quote = { param($s) '"' + ($s -replace '"', '\"') + '"' }
         $workDir = Join-Path ([IO.Path]::GetTempPath()) 'claude-ask-dialog'
         [void](New-Item -ItemType Directory -Force -Path $workDir)
         $psi = New-Object Diagnostics.ProcessStartInfo
@@ -578,17 +637,11 @@ namespace ClaudeHook {
         $psi.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
         $psi.EnvironmentVariables.Remove('CLAUDECODE')
         $psi.EnvironmentVariables['MAX_THINKING_TOKENS'] = '0'  # thinking makes it 4 s -> 20-40 s
-        try {
-            $proc = [Diagnostics.Process]::Start($psi)
-            $stdin = New-Object IO.StreamWriter($proc.StandardInput.BaseStream, [Text.UTF8Encoding]::new($false))
-            $stdin.Write("Word: $word`nText: $(Get-Copied $box.Text)")
-            $stdin.Close()
-            [void]$script:wordJobs.Add(@{ Word = $word; Key = $key; Box = $box; At = $at; Process = $proc
-                Output = $proc.StandardOutput.ReadToEndAsync(); Watch = [Diagnostics.Stopwatch]::StartNew() })
-            $wordTimer.Start()
-        } catch {
-            $wordTip.Show("$word → ?", $box, $at, 5000)
-        }
+        $proc = [Diagnostics.Process]::Start($psi)
+        $stdin = New-Object IO.StreamWriter($proc.StandardInput.BaseStream, [Text.UTF8Encoding]::new($false))
+        $stdin.Write($prompt)
+        $stdin.Close()
+        @{ Process = $proc; Output = $proc.StandardOutput.ReadToEndAsync(); Watch = [Diagnostics.Stopwatch]::StartNew() }
     }
     $wordTimer = New-Object Windows.Forms.Timer
     $wordTimer.Interval = 200
@@ -1242,17 +1295,148 @@ $content
         $script:refCache = $tab.RefCache
     }
 
+    # Language flags, Ukrainian and British, drawn here. A click switches the tab's texts and, with Submit or
+    # Close, the session's language: Claude is told to write in it, and the session's later tabs open in it.
+    $flagSize = New-Object Drawing.Size((& $px 24), (& $px 16))
+    $flagTips = @{
+        uk = 'Українська: Claude пише українською до кінця сесії (також після /clear)'
+        en = 'English: Claude writes in English for the rest of this session (also after /clear)'
+    }
+    $flagPaint = @{
+        UaBlue    = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(0, 87, 183))
+        UaYellow  = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(255, 215, 0))
+        UkBlue    = [Drawing.Color]::FromArgb(1, 33, 105)
+        UkRed     = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(200, 16, 46))
+        White     = [Drawing.Brushes]::White
+        Saltire   = New-Object Drawing.Pen([Drawing.Color]::White, ($flagSize.Height * 0.2))
+        RedSaltire = New-Object Drawing.Pen([Drawing.Color]::FromArgb(200, 16, 46), ($flagSize.Height * 0.07))
+        Dim       = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(150, [Drawing.SystemColors]::Control))
+        Border    = New-Object Drawing.Pen([Drawing.Color]::FromArgb(51, 65, 85))
+    }
+    function New-LanguageFlag([string]$lang) {
+        $flag = New-Object Windows.Forms.Panel
+        $flag.Size = $flagSize
+        $flag.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 6), 0)
+        $flag.Cursor = [Windows.Forms.Cursors]::Hand
+        $flag.Tag = $lang
+        $tips.SetToolTip($flag, $flagTips[$lang])
+        $flag.add_Paint({
+            param($sender, $e)
+            $gr = $e.Graphics
+            $fw = $sender.Width; $fh = $sender.Height
+            if ($sender.Tag -eq 'uk') {
+                $gr.FillRectangle($flagPaint.UaBlue, 0, 0, $fw, [int]($fh / 2))
+                $gr.FillRectangle($flagPaint.UaYellow, 0, [int]($fh / 2), $fw, $fh - [int]($fh / 2))
+            } else {
+                $gr.Clear($flagPaint.UkBlue)
+                $gr.SmoothingMode = 'AntiAlias'
+                foreach ($pen in $flagPaint.Saltire, $flagPaint.RedSaltire) {
+                    $gr.DrawLine($pen, 0, 0, $fw, $fh)
+                    $gr.DrawLine($pen, 0, $fh, $fw, 0)
+                }
+                $gr.SmoothingMode = 'None'
+                $cross = [int]($fh / 3); $red = [int]($fh / 5)
+                $gr.FillRectangle($flagPaint.White, [int](($fw - $cross) / 2), 0, $cross, $fh)
+                $gr.FillRectangle($flagPaint.White, 0, [int](($fh - $cross) / 2), $fw, $cross)
+                $gr.FillRectangle($flagPaint.UkRed, [int](($fw - $red) / 2), 0, $red, $fh)
+                $gr.FillRectangle($flagPaint.UkRed, 0, [int](($fh - $red) / 2), $fw, $red)
+            }
+            # The tab's language is framed; the other is faded.
+            if ((Get-OwnerTab $sender).Lang -eq $sender.Tag) { $gr.DrawRectangle($flagPaint.Border, 0, 0, $fw - 1, $fh - 1) }
+            else { $gr.FillRectangle($flagPaint.Dim, 0, 0, $fw, $fh) }
+        })
+        $flag.add_Click({ param($sender) Set-TabLanguage (Get-OwnerTab $sender) $sender.Tag })
+        $flag
+    }
+    function Set-TabLanguage($tab, [string]$lang) {
+        $tab.Lang = $lang
+        $tab.LangChosen = $true
+        Set-TabTexts $tab
+        foreach ($f in $tab.Flags) { $f.Invalidate() }
+        Update-WindowTitle
+        Update-TabTranslation $tab
+    }
+
+    # The question texts in the tab's language: the originals when they are in it, else a translation from a
+    # headless `claude -p` (one call per tab and language, cached). Answers keep the original texts.
+    $script:translateJobs = New-Object Collections.ArrayList
+    function Show-TabTexts($tab, [string[]]$texts, [string]$lang) {
+        Use-Tab $tab
+        for ($i = 0; $i -lt $tab.Texts.Count; $i++) {
+            $entry = $tab.Texts[$i]
+            if ($entry.Control.IsDisposed) { continue }
+            if ($entry.Amp) { Set-QuestionText $entry.Control $texts[$i] -Amp } else { Set-QuestionText $entry.Control $texts[$i] }
+        }
+        $tab.Shown = $lang
+        Update-FormHeight
+    }
+    function Update-TabTranslation($tab) {
+        $lang = $tab.Lang
+        if ($tab.Shown -eq $lang) { return }
+        if ($lang -eq $tab.SourceLang) { Show-TabTexts $tab @($tab.Texts | ForEach-Object { $_.Original }) $lang; return }
+        if ($tab.Translations.ContainsKey($lang)) { Show-TabTexts $tab $tab.Translations[$lang] $lang; return }
+        if (@($script:translateJobs | Where-Object { $_.Tab -eq $tab -and $_.Lang -eq $lang }).Count) { return }
+        $system = "You translate the texts of a question form into $($languageNames[$lang]). The input is a JSON " +
+            'array of strings. Reply with only a JSON array of the same length and order, each string translated, ' +
+            'no code fence. Keep code, identifiers, commands, file and path names, ticket IDs, spec codes ' +
+            '(AC-03, ADR-0019, PRD §5), slash commands, names of people, products and teams, and markdown as they are.'
+        $originals = @($tab.Texts | ForEach-Object { $_.Original })
+        Show-Status $ui[$lang].Translating $false $tab
+        try {
+            $job = Start-HeadlessClaude $system (ConvertTo-Json -InputObject $originals -Compress)
+            $job += @{ Tab = $tab; Lang = $lang; Count = $originals.Count }
+            [void]$script:translateJobs.Add($job)
+            $translateTimer.Start()
+        } catch {
+            Show-Status $ui[$lang].TranslateFailed $true $tab
+        }
+    }
+    $translateTimer = New-Object Windows.Forms.Timer
+    $translateTimer.Interval = 200
+    $translateTimer.add_Tick({
+        foreach ($job in @($script:translateJobs)) {
+            $done = $job.Output.IsCompleted
+            if (-not $done -and $job.Watch.Elapsed.TotalSeconds -lt 120) { continue }
+            $script:translateJobs.Remove($job)
+            if (-not $done) { try { $job.Process.Kill() } catch {} }
+            $tab = $job.Tab
+            if (-not $script:tabs.Contains($tab)) { continue }
+            $texts = $null
+            if ($done) {
+                try {
+                    $json = "$($job.Output.Result)".Trim() -replace '^```\w*\s*', '' -replace '\s*```$', ''
+                    $parsed = $json | ConvertFrom-Json  # PS 5.1 passes the array on as one item
+                    $texts = @($parsed | ForEach-Object { "$_" })
+                } catch {}
+            }
+            if ($texts -and $texts.Count -eq $job.Count) {
+                $tab.Translations[$job.Lang] = $texts
+                Show-Status '' $false $tab
+                if ($tab.Lang -eq $job.Lang) { Show-TabTexts $tab $texts $job.Lang }
+            } else {
+                Write-Log "ask-dialog: translation into $($job.Lang) failed: $(if ($done) { "$($job.Output.Result)".Trim() } else { 'timed out' })"
+                Show-Status $ui[$job.Lang].TranslateFailed $true $tab
+            }
+        }
+        if ($script:translateJobs.Count -eq 0) { $translateTimer.Stop() }
+    })
+
     function Add-QuestionTab($payload, $request) {
         $questions = @($payload.tool_input.questions)
         $found = Get-QuestionContext $payload.cwd
         $context = $found.Context
         $allText = ($questions | ForEach-Object { $_.question; $_.header; @($_.options) | ForEach-Object { $_.label; $_.description } }) -join ' '
         $second = if ($context['Feature']) { $context['Feature'] } else { $context['Branch'] }
-        # The tab's own texts (buttons, captions) speak the questions' language.
+        # The tab's own texts (buttons, captions) speak the session's language, else the questions'.
+        # The question texts are translated into it when they are in the other one (Update-TabTranslation).
+        $sessionLang = Get-SessionLanguage $payload.session_id
+        $sourceLang = if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' }
         $tab = @{
             IsTab = $true; Payload = $payload; Request = $request; Context = $context
             Title = $context['Project'] + $(if ($second) { " · $second" })
-            Lang = $(if ($allText -match '[Ѐ-ӿ]') { 'uk' } else { 'en' })
+            Lang = $(if ($sessionLang) { $sessionLang } else { $sourceLang })
+            SessionLang = $sessionLang; LangChosen = $false
+            SourceLang = $sourceLang; Texts = [Collections.ArrayList]::new(); Translations = @{}; Shown = $sourceLang
             Visited = $false; RefCache = @{}; Entries = @(); OtherLabels = @(); RefCaptions = @()
             Attachments = [Collections.ArrayList]::new(); ImageCount = 0
         }
@@ -1286,7 +1470,9 @@ $content
             $rec = Get-Recommended $q
 
             $box = New-Object Windows.Forms.GroupBox
-            Set-QuestionText $box $(if ($q.header) { $q.header } else { "Question $($i + 1)" }) -Amp
+            $header = if ($q.header) { $q.header } else { "Question $($i + 1)" }
+            Set-QuestionText $box $header -Amp
+            [void]$tab.Texts.Add(@{ Control = $box; Original = $header; Amp = $true })
             $box.AutoSize = $true
             $box.AutoSizeMode = 'GrowAndShrink'
             $box.MinimumSize = New-Object Drawing.Size($w, 0)
@@ -1312,6 +1498,7 @@ $content
             $text = New-SelectableText ($w - (& $px 30)) $bold $form.ForeColor $form.BackColor -Linkable
             Set-Links $tab $text $linkColor
             Set-QuestionText $text $q.question
+            [void]$tab.Texts.Add(@{ Control = $text; Original = $q.question })
             $text.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
             $inner.Controls.Add($text)
 
@@ -1362,6 +1549,7 @@ $content
             foreach ($o in @($q.options)) {
                 $c = if ($q.multiSelect) { New-Object Windows.Forms.CheckBox } else { New-Object Windows.Forms.RadioButton }
                 Set-QuestionText $c $o.label
+                [void]$tab.Texts.Add(@{ Control = $c; Original = $o.label })
                 $c.Tag = $o.label
                 $c.UseMnemonic = $false
                 $c.AutoSize = $true
@@ -1375,6 +1563,7 @@ $content
                     $d = New-SelectableText ($w - (& $px 60)) $form.Font $gray $form.BackColor -Linkable
                     Set-Links $tab $d $linkColorDim
                     Set-QuestionText $d $o.description
+                    [void]$tab.Texts.Add(@{ Control = $d; Original = $o.description })
                     $d.Margin = New-Object Windows.Forms.Padding((& $px 22), 0, 0, (& $px 4))
                     $inner.Controls.Add($d)
                 }
@@ -1430,27 +1619,36 @@ $content
         })
         $tab.NotePanel = $notePanel; $tab.NoteLabel = $noteLabel; $tab.Note = $note; $tab.AttachPanel = $attachPanel
 
-        # The bottom row: Keep Recommended on the left, the buttons (and the status) from the right.
+        # The bottom row: the language flags and Keep Recommended on the left, the buttons (and the status)
+        # from the right.
         $bar = New-Object Windows.Forms.TableLayoutPanel
         $bar.Dock = 'Bottom'
         $bar.AutoSize = $true
-        $bar.ColumnCount = 2
+        $bar.ColumnCount = 3
         $bar.RowCount = 1
+        [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
         [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::AutoSize)))
         [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent, 100)))
         [void]$bar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
         $bar.Padding = New-Object Windows.Forms.Padding((& $px 10))
+        $flags = New-Object Windows.Forms.FlowLayoutPanel
+        $flags.AutoSize = $true
+        $flags.WrapContents = $false
+        $flags.Anchor = 'Left'
+        $flags.Margin = New-Object Windows.Forms.Padding(0, 0, (& $px 10), 0)
+        $tab.Flags = @('uk', 'en' | ForEach-Object { $f = New-LanguageFlag $_; $flags.Controls.Add($f); $f })
+        $bar.Controls.Add($flags, 0, 0)
         $keepRecommended = New-Object Windows.Forms.CheckBox
         $keepRecommended.AutoSize = $true
         $keepRecommended.Anchor = 'Left'
         $keepRecommended.Checked = [bool]$env:ASK_DIALOG_KEEP
-        $bar.Controls.Add($keepRecommended, 0, 0)
+        $bar.Controls.Add($keepRecommended, 1, 0)
         $buttons = New-Object Windows.Forms.FlowLayoutPanel
         $buttons.FlowDirection = 'RightToLeft'
         $buttons.AutoSize = $true
         $buttons.Dock = 'Fill'
         $buttons.Margin = New-Object Windows.Forms.Padding(0)
-        $bar.Controls.Add($buttons, 1, 0)
+        $bar.Controls.Add($buttons, 2, 0)
         $mkButton = {
             $b = New-Object Windows.Forms.Button
             $b.AutoSize = $true
@@ -1482,6 +1680,7 @@ $content
         $strip.Controls.Add($tab.Head)
         [void]$script:tabs.Add($tab)
         Set-TabTexts $tab
+        Update-TabTranslation $tab
         if ($script:current) { Update-WindowTitle } else { Select-Tab $tab }
     }
 
@@ -1553,6 +1752,16 @@ $content
                 (($tab.Attachments | ForEach-Object { "[Image #$($_.Number)]: $($_.Path)" }) -join "`n")
         }
         $noteContext = if ($noteText -or $imageBlock) { "Additional message from the user, written in the question dialog:`n$noteText$imageBlock" } else { '' }
+
+        # A flag switched away from the session's language: it becomes the session's, with either button.
+        if ($tab.LangChosen -and $tab.Lang -ne $tab.SessionLang) {
+            Set-SessionLanguage $tab.Payload.session_id $tab.Lang
+            $langNote = Get-SessionLanguageNote $tab.Lang -Full
+            $noteContext = if ($noteContext) { "$noteContext`n`n$langNote" } else { $langNote }
+        } elseif ($tab.SessionLang -and $mode -ne 'close') {
+            $langNote = Get-SessionLanguageNote $tab.SessionLang
+            $noteContext = if ($noteContext) { "$noteContext`n`n$langNote" } else { $langNote }
+        }
 
         if ($mode -eq 'close') {
             # Closed without answering: the terminal prompt follows, but the message still reaches Claude.
@@ -1678,6 +1887,9 @@ $content
         foreach ($more in @("$env:ASK_DIALOG_MORE" -split ';' | Where-Object { $_ })) {
             [void](Add-QuestionTab ([IO.File]::ReadAllText($more) | ConvertFrom-Json) $null)
         }
+        if ($env:ASK_DIALOG_LANG) { Set-TabLanguage $tab $env:ASK_DIALOG_LANG }
+        while ($script:translateJobs.Count) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }
+        if ($tab.Shown -ne $tab.SourceLang) { [Console]::Error.WriteLine("translated: $($tab.Shown) - $($tab.Texts[1].Control.Text)") }
         if ($env:ASK_DIALOG_NOTE) { $tab.Note.Text = $env:ASK_DIALOG_NOTE + ' ' }
         if ($env:ASK_DIALOG_IMAGE) { $tab.Note.SelectionStart = $tab.Note.TextLength; Add-Attachment $tab $env:ASK_DIALOG_IMAGE $false }
         if ($env:ASK_DIALOG_WORD) {
