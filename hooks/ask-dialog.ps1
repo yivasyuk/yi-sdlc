@@ -27,8 +27,9 @@
 #                       passed as [Image #n] file paths). Sent as additionalContext with Submit/Close.
 #   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4, a bare §6 of the
 #                       document named before it or being worked on) and the codes the feature's documents
-#                       define (N1, QG-1, OQ-2...) a question mentions are links; a click shows that section
-#                       or definition beside the window.
+#                       define (N1, QG-1, OQ-2...), else the roadmap (D3), a question mentions are links; a
+#                       click shows that section or definition beside the window, where codes and .md links
+#                       open in place too (a link under the path goes back).
 # State (notification-mode, keep-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
@@ -810,9 +811,11 @@ namespace ClaudeHook {
     # or docs/features/*/adr), docs/.../x.md with §5 or #anchor, and PRD|SAD|spec|... §6.4. A bare §6 is a
     # section of the document named last before it (PRD §6 ... §7), else of the feature's most recently edited
     # document that has it. Any other code (N1, QG-1, OQ-2, BR-03, SCR-01, T4) links where the feature's
-    # documents define it: a heading, a table's first cell or a list item. Features are tried in order: the
-    # first one the question names (else the tab's questions), the title's feature, then the most recently
-    # edited; a bare § or another code only in the first, as each feature numbers its own. Each tab resolves against its own repo (Use-Tab).
+    # documents define it: a heading, a table's first cell or a list item; else where docs/roadmap.md or
+    # another document directly in docs/ does (the roadmap's open decisions D1, D3). Features are tried in
+    # order: the first one the question names (else the tab's questions), the title's feature, then the most
+    # recently edited; a bare § or another code only in the first, as each feature numbers its own.
+    # Each tab resolves against its own repo (Use-Tab).
     function Get-NamedFeature([string]$text, [string[]]$slugs) {
         $first = $null
         foreach ($slug in $slugs) {
@@ -830,13 +833,13 @@ namespace ClaudeHook {
         @{ Kind = 'adr'; Re = [regex]'(?i)\bADR[-\s]?(\d{1,4})\b' }
         @{ Kind = 'item'; Re = [regex]'\b(AC|US)-(\d{1,3})([a-z]?)\b' }
         @{ Kind = 'section'; Re = [regex]'§[\s⁠]*(\d+(?:\.\d+)*)' }
-        @{ Kind = 'id'; Re = [regex]'(?<![\w-])([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-])' }
+        @{ Kind = 'id'; Re = [regex]'(?<![\w-])([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-]|\.\d)' }
     )
     $headingRe = [regex]'^(#{1,6})\s+(.*?)\s*#*\s*$'
     $fenceRe = [regex]'^\s*(```|~~~)'
     # A code's definition: a heading, a table's first cell or a list item it starts, bold or not
     # (### SCR-01 —, | N1 |, 1. **QG-1 Fenced actions.**); a prose line or a bold caption (**C4 Context:**) is not one.
-    $idDefRe = [regex]'^\s*(?:(#{1,6})\s+|(\|)\s*|((?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))(?:\*\*|__)?([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-])'
+    $idDefRe = [regex]'^\s*(?:(#{1,6})\s+|(\|)\s*|((?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))(?:\*\*|__)?([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-]|\.\d)'
     $docOrder = 'PRD.md', 'spec.md', 'sad.md', 'data-model.md', 'test-plan.md', 'design-spec.md', 'idea-brief.md'
 
     function Get-Mentions([string]$text) {
@@ -903,6 +906,18 @@ namespace ClaudeHook {
                 $docs = @($top + $deeper | ForEach-Object { "docs/features/$slug/" + ($_.FullName.Substring($dir.Length + 1) -replace '\\', '/') })
             }
             $script:docCache[$key] = $docs
+        }
+        $script:docCache[$key]
+    }
+    # The repo's own documents directly in docs/: the roadmap and the architecture map first, then by name.
+    function Get-RepoDocs {
+        $key = 'docs|'
+        if (-not $script:docCache.ContainsKey($key)) {
+            $dir = Join-Path $script:refRoot 'docs'
+            $first = 'roadmap.md', 'architecture-map.md'
+            $script:docCache[$key] = @(Get-ChildItem -LiteralPath $dir -File -Filter *.md -ErrorAction SilentlyContinue |
+                Sort-Object { $i = [Array]::IndexOf($first, $_.Name); if ($i -lt 0) { 99 } else { $i } }, Name |
+                ForEach-Object { "docs/$($_.Name)" })
         }
         $script:docCache[$key]
     }
@@ -1058,6 +1073,10 @@ namespace ClaudeHook {
                         if ($index.ContainsKey($id)) { return New-IdRef $m.Key $rel $index[$id] $slug }
                     }
                 }
+                foreach ($rel in (Get-RepoDocs)) {
+                    $index = Get-IdIndex $rel
+                    if ($index.ContainsKey($id)) { return New-IdRef $m.Key $rel $index[$id] '' }
+                }
             }
         }
         $null
@@ -1107,14 +1126,39 @@ namespace ClaudeHook {
         $path.add_LinkClicked({
             if ($script:shownRef) { try { Start-Process -FilePath $script:shownRef.Abs } catch { Show-Status "$_" $true } }
         })
-        $head.Controls.AddRange(@($title, $path))
+        # Back to the reference this one was opened from, while there is one (Open-PageReference).
+        $back = New-Object Windows.Forms.LinkLabel
+        $back.AutoSize = $true
+        $back.UseMnemonic = $false
+        $back.Visible = $false
+        $back.Margin = New-Object Windows.Forms.Padding(0, (& $px 4), 0, 0)
+        $back.LinkColor = $pathColor
+        $back.ActiveLinkColor = [Drawing.Color]::White
+        $back.LinkBehavior = 'HoverUnderline'
+        $back.add_LinkClicked({
+            if (-not $script:refHistory.Count) { return }
+            $previous = $script:refHistory[$script:refHistory.Count - 1]
+            $script:refHistory.RemoveAt($script:refHistory.Count - 1)
+            Show-Reference $previous -FromPage
+        })
+        $head.Controls.AddRange(@($title, $path, $back))
 
         # The body is HTML in the WebBrowser control (IE11 engine): a .md section rendered, any other file as code.
         $body = New-Object Windows.Forms.WebBrowser
         $body.Dock = 'Fill'
         $body.ScriptErrorsSuppressed = $true
         $body.AllowWebBrowserDrop = $false
-        # Links leave the window: a page anchor scrolls, anything else opens in its own app.
+        # Links of the page itself (codes, .md and other files, anchors) are handled on click (Open-PageLink): IE
+        # blocks a page set through DocumentText from following a file: link, so they never navigate. A web link
+        # navigates and opens in its own app.
+        $body.add_DocumentCompleted({
+            param($sender)
+            foreach ($a in $sender.Document.GetElementsByTagName('a')) {
+                if ($a.GetAttribute('data-ref') -or $a.GetAttribute('data-anchor') -or $a.GetAttribute('data-file')) {
+                    $a.add_Click({ param($link, $e) Open-PageLink $link $e })
+                }
+            }
+        })
         $body.add_Navigating({
             param($sender, $e)
             $url = $e.Url
@@ -1134,7 +1178,7 @@ namespace ClaudeHook {
         $f.Controls.Add($head)
         $f.add_KeyDown({ param($sender, $e) if ($e.KeyCode -eq 'Escape') { $sender.Close() } })
         $f.add_FormClosed({ $script:shownRef = $null; Update-ReferenceLinks })
-        @{ Form = $f; Title = $title; Path = $path; Body = $body }
+        @{ Form = $f; Title = $title; Path = $path; Back = $back; Body = $body }
     }
 
     # Markdown to HTML, enough for the docs: headings, paragraphs, nested lists and task lists, tables,
@@ -1266,6 +1310,83 @@ namespace ClaudeHook {
         $out.ToString()
     }
 
+    # Codes in the shown section link like those in the questions, looked up from its feature first; a bare §
+    # there is a section of the same document when it has one. Code blocks are left alone; the page's own links
+    # get the attribute Open-PageLink follows on click.
+    $script:pageRefs = New-Object Collections.ArrayList
+    $script:refHistory = New-Object Collections.ArrayList
+    function Add-PageLinks([string]$html, $ref) {
+        $script:pageRefs.Clear()
+        if ($script:current) { Use-Tab $script:current }
+        if (-not $script:refRoot) { return $html }
+        $order = $script:featureOrder
+        $script:featureOrder = @(@($ref.Feature) + @($order) | Where-Object { $_ } | Select-Object -Unique)
+        $leaf = $ref.Path.Substring($ref.Path.LastIndexOf('/') + 1)
+        $out = New-Object Text.StringBuilder
+        $skip = 0
+        foreach ($t in [regex]::Matches($html, '<[^>]*>|[^<]+')) {
+            $s = $t.Value
+            if ($s.StartsWith('<')) {
+                if ($s -match '^<a href="([^"]*)">$') { $s = $s.TrimEnd('>') + (Get-LinkData ([Net.WebUtility]::HtmlDecode($Matches[1])) $ref) + '>' }
+                if ($s -match '^<(a|pre)[\s>]') { $skip++ } elseif ($s -match '^</(a|pre)>') { $skip-- }
+                [void]$out.Append($s); continue
+            }
+            if ($skip -gt 0) { [void]$out.Append($s); continue }
+            $plain = [Net.WebUtility]::HtmlDecode($s)
+            $pos = 0
+            foreach ($m in (Get-Mentions $plain)) {
+                # A bare § the document has is its own; one it lacks (an ADR has no numbered sections) is the feature's.
+                if ($m.Kind -eq 'section' -and (Find-Section (Read-DocLines $ref.Path) (Get-NumberedTest $m.Section))) {
+                    $m.Kind = 'file'; $m.Path = $ref.Path; $m.Anchor = ''; $m.Key = "$leaf §$($m.Section)"
+                }
+                $r = Get-Reference $m
+                if (-not $r -or $r -eq $ref) { continue }
+                [void]$script:pageRefs.Add($r)
+                $tip = & $encode "$($r.Key)$(if ($r.Feature) { " · $($r.Feature)" }) — $($r.Title)"
+                [void]$out.Append((& $encode $plain.Substring($pos, $m.Start - $pos)))
+                [void]$out.Append("<a class=""ref"" href=""#yi-ref-$($script:pageRefs.Count - 1)"" data-ref=""$($script:pageRefs.Count - 1)"" title=""$tip"">" +
+                    (& $encode $plain.Substring($m.Start, $m.End - $m.Start)) + '</a>')
+                $pos = $m.End
+            }
+            [void]$out.Append((& $encode $plain.Substring($pos)))
+        }
+        $script:featureOrder = $order
+        $out.ToString()
+    }
+    # A link of the document itself, as the attribute Open-PageLink reads: a page anchor, a .md file of the repo
+    # (opens here) or any other file (opens in its own app). A web link gets none and navigates.
+    function Get-LinkData([string]$href, $ref) {
+        if ($href -match '^#(.+)') { return " data-anchor=""$(& $encode $Matches[1])""" }
+        if ($href -match '^[a-zA-Z][\w+.-]*:') { return '' }
+        $path, $anchor = $href -split '#', 2
+        try { $abs = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $ref.Abs) ([Uri]::UnescapeDataString($path)))) } catch { return '' }
+        $root = [IO.Path]::GetFullPath($script:refRoot).TrimEnd('\') + '\'
+        if ($abs -match '\.md$' -and $abs.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $abs.Substring($root.Length) -replace '\\', '/'
+            $leaf = $rel.Substring($rel.LastIndexOf('/') + 1)
+            $r = Get-Reference @{ Kind = 'file'; Path = $rel; Section = ''; Anchor = "$anchor"; Key = $(if ($anchor) { "$leaf#$anchor" } else { $leaf }) }
+            if ($r) { [void]$script:pageRefs.Add($r); return " data-ref=""$($script:pageRefs.Count - 1)""" }
+        }
+        " data-file=""$(& $encode $abs)"""
+    }
+    function Open-PageLink($link, $e) {
+        $e.ReturnValue = $false
+        $browser = $script:viewer.Body
+        if ($n = $link.GetAttribute('data-ref')) { Open-PageReference $browser $script:pageRefs[[int]$n] }
+        elseif ($id = $link.GetAttribute('data-anchor')) {
+            $target = $browser.Document.GetElementById($id)
+            if ($target) { $target.ScrollIntoView($true) }
+        }
+        else { try { Start-Process -FilePath $link.GetAttribute('data-file') } catch { Show-Status "$_" $true } }
+    }
+    # Shown after the click returns: the page can't be replaced from inside its own event.
+    function Open-PageReference($browser, $ref) {
+        if (-not $ref -or $ref -eq $script:shownRef) { return }
+        if ($script:shownRef) { [void]$script:refHistory.Add($script:shownRef) }
+        $script:pendingRef = $ref
+        [void]$browser.BeginInvoke([Windows.Forms.MethodInvoker] { Show-Reference $script:pendingRef -FromPage })
+    }
+
     # The section without its own heading (the window's title already says it), as a page.
     function Set-ReferenceBody($browser, $ref) {
         $lines = @($ref.Lines)
@@ -1274,7 +1395,7 @@ namespace ClaudeHook {
             $own = [Array]::FindIndex([string[]]$lines, [Predicate[string]] {
                 param($l) $m = $headingRe.Match($l); $m.Success -and $m.Groups[2].Value -eq $ref.Title })
             if ($own -ge 0) { $lines = @($lines | Select-Object -First $own) + @($lines | Select-Object -Skip ($own + 1)) }
-            $content = ConvertTo-MarkdownHtml $lines
+            $content = Add-PageLinks (ConvertTo-MarkdownHtml $lines) $ref
         } else {
             $content = '<pre><code>' + (& $encode ($lines -join "`n")) + '</code></pre>'
         }
@@ -1288,7 +1409,7 @@ body { font-family: 'Segoe UI', sans-serif; font-size: ${font}px; line-height: 1
 h1, h2 { border-bottom: 1px solid #d1d9e0; padding-bottom: .25em; } h1 { font-size: 1.6em; } h2 { font-size: 1.35em; }
 h3 { font-size: 1.15em; } h4, h5, h6 { font-size: 1em; } h1, h2, h3, h4, h5, h6 { margin: 1.1em 0 .5em; font-weight: 600; }
 p, ul, ol, table, pre, blockquote { margin: 0 0 .8em; } ul, ol { padding-left: 1.8em; } li { margin: .15em 0; }
-a { color: #0969da; text-decoration: none; } a:hover { text-decoration: underline; }
+a { color: #0969da; text-decoration: none; } a:hover { text-decoration: underline; } a.ref { color: #426491; white-space: nowrap; }
 code { font-family: Consolas, monospace; font-size: .9em; background: #eff1f3; padding: .1em .35em; border-radius: 4px; }
 pre { background: #f6f8fa; padding: .8em 1em; border-radius: 6px; overflow: auto; }
 pre code { background: none; padding: 0; font-size: .88em; line-height: 1.35; }
@@ -1309,7 +1430,9 @@ $content
             $l.LinkBehavior = if ($l.Tag -eq $script:shownRef) { 'AlwaysUnderline' } else { 'HoverUnderline' }
         }
     }
-    function Show-Reference($ref) {
+    # -FromPage: opened from the reference window itself, so its back link keeps where it came from.
+    function Show-Reference($ref, [switch]$FromPage) {
+        if (-not $FromPage) { $script:refHistory.Clear() }
         $v = $script:viewer
         $isOpen = $v -and -not $v.Form.IsDisposed -and $v.Form.Visible
         if ($isOpen -and $script:shownRef -eq $ref) { $v.Form.Close(); return }
@@ -1318,6 +1441,8 @@ $content
         $v.Form.Text = $ref.Key + $(if ($ref.Feature) { " · $($ref.Feature)" })
         $v.Title.Text = $ref.Title
         $v.Path.Text = "$($ref.Path):$($ref.Line)"
+        $v.Back.Visible = $script:refHistory.Count -gt 0
+        if ($v.Back.Visible) { $v.Back.Text = '← ' + $script:refHistory[$script:refHistory.Count - 1].Key }
         $tips.SetToolTip($v.Path, $ui[$script:current.Lang].OpenFile)
         Set-ReferenceBody $v.Body $ref
         Update-ReferenceLinks
