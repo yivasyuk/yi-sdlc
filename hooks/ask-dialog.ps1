@@ -25,8 +25,10 @@
 #                       `claude -p`, Haiku) shows beside the pointer.
 #   Message field     - optional free text for Claude; Ctrl+V pastes clipboard images (saved as PNG,
 #                       passed as [Image #n] file paths). Sent as additionalContext with Submit/Close.
-#   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4) a question
-#                       mentions are links under it; a click shows that section beside the window.
+#   References        - AC-/US- items, ADRs, doc paths and doc sections (PRD §5, sad.md §6.4, a bare §6 of the
+#                       document named before it or being worked on) and the codes the feature's documents
+#                       define (N1, QG-1, OQ-2...) a question mentions are links; a click shows that section
+#                       or definition beside the window.
 # State (notification-mode, keep-recommended\) lives in the plugin's data dir: -DataDir, else $env:CLAUDE_PLUGIN_DATA
 # (set for plugin hooks), else next to this script. It survives plugin updates; the script's folder does not.
 # -Mode desktop|terminal|toggle|status manages the notification mode from a shell (scripts\notification-mode.cmd).
@@ -805,9 +807,12 @@ namespace ClaudeHook {
 
     # References the questions mention, resolved to a section of a file under the repo's docs/:
     # AC-03 / US-02 (heading in docs/features/<slug>/PRD.md or spec.md), ADR-0019 (whole file in docs/adr
-    # or docs/features/*/adr), docs/.../x.md with §5 or #anchor, and PRD|SAD|spec|... §6.4. Features are
-    # tried in order: the first one the question names (else the tab's questions), the title's feature,
-    # then the most recently edited. Each tab resolves against its own repo (Use-Tab).
+    # or docs/features/*/adr), docs/.../x.md with §5 or #anchor, and PRD|SAD|spec|... §6.4. A bare §6 is a
+    # section of the document named last before it (PRD §6 ... §7), else of the feature's most recently edited
+    # document that has it. Any other code (N1, QG-1, OQ-2, BR-03, SCR-01, T4) links where the feature's
+    # documents define it: a heading, a table's first cell or a list item. Features are tried in order: the
+    # first one the question names (else the tab's questions), the title's feature, then the most recently
+    # edited; a bare § or another code only in the first, as each feature numbers its own. Each tab resolves against its own repo (Use-Tab).
     function Get-NamedFeature([string]$text, [string[]]$slugs) {
         $first = $null
         foreach ($slug in $slugs) {
@@ -818,15 +823,21 @@ namespace ClaudeHook {
     }
     $docNames = @{ prd = 'PRD.md'; sad = 'sad.md'; spec = 'spec.md'; 'data-model' = 'data-model.md'; 'test-plan' = 'test-plan.md'
         'idea-brief' = 'idea-brief.md'; 'design-spec' = 'design-spec.md' }
-    # Order matters: a path wins over a PRD § or an AC inside it.
+    # Order matters: a path wins over a PRD § or an AC inside it, and all of them over a bare § or another code.
     $refPatterns = @(
         @{ Kind = 'file'; Re = [regex]'(?<![\w/.\\-])((?:docs|src|web|tests|scripts|\.claude)/[\w./-]*\w\.(?:md|cs|tsx?|json|ya?ml|sql|ps1))(?:\s*§[\s⁠]*(\d+(?:\.\d+)*)|#([\w-]+))?' }
         @{ Kind = 'doc'; Re = [regex]'(?i)\b(PRD|SAD|spec|data-model|test-plan|idea-brief|design-spec)(?:\.md)?\s*§[\s⁠]*(\d+(?:\.\d+)*)' }
         @{ Kind = 'adr'; Re = [regex]'(?i)\bADR[-\s]?(\d{1,4})\b' }
         @{ Kind = 'item'; Re = [regex]'\b(AC|US)-(\d{1,3})([a-z]?)\b' }
+        @{ Kind = 'section'; Re = [regex]'§[\s⁠]*(\d+(?:\.\d+)*)' }
+        @{ Kind = 'id'; Re = [regex]'(?<![\w-])([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-])' }
     )
     $headingRe = [regex]'^(#{1,6})\s+(.*?)\s*#*\s*$'
     $fenceRe = [regex]'^\s*(```|~~~)'
+    # A code's definition: a heading, a table's first cell or a list item it starts, bold or not
+    # (### SCR-01 —, | N1 |, 1. **QG-1 Fenced actions.**); a prose line or a bold caption (**C4 Context:**) is not one.
+    $idDefRe = [regex]'^\s*(?:(#{1,6})\s+|(\|)\s*|((?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))(?:\*\*|__)?([A-Z]{1,4})-?(\d{1,3})([a-z]?)(?![\w-])'
+    $docOrder = 'PRD.md', 'spec.md', 'sad.md', 'data-model.md', 'test-plan.md', 'design-spec.md', 'idea-brief.md'
 
     function Get-Mentions([string]$text) {
         $found = New-Object Collections.ArrayList
@@ -843,20 +854,82 @@ namespace ClaudeHook {
                     'doc' { $doc = $docNames[$g[1].Value.ToLower()]; @{ Doc = $doc; Section = $g[2].Value; Key = "$doc §$($g[2].Value)" } }
                     'adr' { $n = [int]$g[1].Value; @{ Num = $n; Key = 'ADR-{0:D4}' -f $n } }
                     'item' { $n = [int]$g[2].Value; @{ Prefix = $g[1].Value; Num = $n; Suffix = $g[3].Value; Key = '{0}-{1:D2}{2}' -f $g[1].Value, $n, $g[3].Value } }
+                    'section' { @{ Section = $g[1].Value; Key = "§$($g[1].Value)" } }
+                    'id' { @{ Prefix = $g[1].Value; Num = [int]$g[2].Value; Suffix = $g[3].Value; Key = $x.Value } }
                 }
                 $m.Kind = $p.Kind; $m.Start = $x.Index; $m.End = $x.Index + $x.Length
                 [void]$found.Add($m)
             }
         }
+        $found = @($found | Sort-Object { $_.Start })
+        # A bare § belongs to the document named last before it: PRD §6 ... §7 is PRD §7.
+        $named = $null
+        foreach ($m in $found) {
+            if ($m.Kind -eq 'doc' -or ($m.Kind -eq 'file' -and $m.Path -match '\.md$')) { $named = $m; continue }
+            if ($m.Kind -ne 'section' -or -not $named) { continue }
+            if ($named.Kind -eq 'doc') { $m.Kind = 'doc'; $m.Doc = $named.Doc; $m.Key = "$($named.Doc) §$($m.Section)" }
+            else {
+                $m.Kind = 'file'; $m.Path = $named.Path; $m.Anchor = ''
+                $m.Key = "$($named.Path.Substring($named.Path.LastIndexOf('/') + 1)) §$($m.Section)"
+            }
+        }
         $seen = @{}
-        @($found | Sort-Object { $_.Start } | Where-Object { if ($seen.ContainsKey($_.Key)) { $false } else { $seen[$_.Key] = $true; $true } })
+        @($found | Where-Object { if ($seen.ContainsKey($_.Key)) { $false } else { $seen[$_.Key] = $true; $true } })
     }
 
+    # Read once per tab (Use-Tab), as every code the questions mention may look through the same documents.
     function Read-DocLines([string]$rel) {
-        $abs = Join-Path $script:refRoot $rel
-        if (-not (Test-Path -LiteralPath $abs -PathType Leaf)) { return $null }
-        , [IO.File]::ReadAllLines($abs, [Text.Encoding]::UTF8)
+        $key = "lines|$rel"
+        if (-not $script:docCache.ContainsKey($key)) {
+            $abs = Join-Path $script:refRoot $rel
+            $script:docCache[$key] = if (Test-Path -LiteralPath $abs -PathType Leaf) { [IO.File]::ReadAllLines($abs, [Text.Encoding]::UTF8) } else { $null }
+        }
+        , $script:docCache[$key]
     }
+
+    # A feature's documents, as repo-relative paths: its own top-level ones (PRD, spec, SAD... first), then
+    # those in its folders (tasks, contracts, reviews), the most recently edited first; ADRs are linked by number.
+    function Get-FeatureDocs([string]$slug) {
+        $key = "docs|$slug"
+        if (-not $script:docCache.ContainsKey($key)) {
+            $dir = Join-Path $script:refRoot "docs\features\$slug"
+            $docs = @()
+            if (Test-Path -LiteralPath $dir -PathType Container) {
+                $dir = (Get-Item -LiteralPath $dir).FullName
+                $top = @(Get-ChildItem -LiteralPath $dir -File -Filter *.md |
+                    Sort-Object { $i = [Array]::IndexOf($docOrder, $_.Name); if ($i -lt 0) { 99 } else { $i } }, Name)
+                $deeper = @(Get-ChildItem -LiteralPath $dir -Directory | Where-Object { $_.Name -ne 'adr' } |
+                    ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter *.md -Recurse } | Sort-Object LastWriteTime -Descending)
+                $docs = @($top + $deeper | ForEach-Object { "docs/features/$slug/" + ($_.FullName.Substring($dir.Length + 1) -replace '\\', '/') })
+            }
+            $script:docCache[$key] = $docs
+        }
+        $script:docCache[$key]
+    }
+    # The codes a document defines, each at its first definition ($idDefRe): line and kind, keyed prefix|number|suffix.
+    function Get-IdIndex([string]$rel) {
+        $key = "index|$rel"
+        if (-not $script:docCache.ContainsKey($key)) {
+            $index = @{}
+            $lines = Read-DocLines $rel
+            $fence = $false
+            for ($i = 0; $lines -and $i -lt $lines.Count; $i++) {
+                if ($fenceRe.IsMatch($lines[$i])) { $fence = -not $fence; continue }
+                if ($fence) { continue }
+                $d = $idDefRe.Match($lines[$i])
+                if (-not $d.Success) { continue }
+                $g = $d.Groups
+                $id = "$($g[4].Value)|$([int]$g[5].Value)|$($g[6].Value)"
+                if (-not $index.ContainsKey($id)) {
+                    $index[$id] = @{ Line = $i; Kind = $(if ($g[1].Success) { 'heading' } elseif ($g[2].Success) { 'row' } else { 'item' }) }
+                }
+            }
+            $script:docCache[$key] = $index
+        }
+        $script:docCache[$key]
+    }
+    # The feature a bare § or another code is looked up in: the question's, else the tab's, else the most recently edited.
+    function Get-OwnFeatures { @($script:featureOrder | Select-Object -First 1) }
 
     # The first heading whose text passes $test, and the lines up to the next heading of its level or above.
     function Find-Section([string[]]$lines, [scriptblock]$test) {
@@ -865,18 +938,21 @@ namespace ClaudeHook {
             if ($fenceRe.IsMatch($lines[$i])) { $fence = -not $fence; continue }
             if ($fence) { continue }
             $h = $headingRe.Match($lines[$i])
-            if (-not $h.Success -or -not (& $test $h.Groups[2].Value)) { continue }
-            $level = $h.Groups[1].Value.Length
-            $inner = $false
-            for ($end = $i + 1; $end -lt $lines.Count; $end++) {
-                if ($fenceRe.IsMatch($lines[$end])) { $inner = -not $inner; continue }
-                if ($inner) { continue }
-                $next = $headingRe.Match($lines[$end])
-                if ($next.Success -and $next.Groups[1].Value.Length -le $level) { break }
-            }
-            return @{ Start = $i; End = $end; Title = $h.Groups[2].Value }
+            if ($h.Success -and (& $test $h.Groups[2].Value)) { return Get-SectionAt $lines $i }
         }
         $null
+    }
+    function Get-SectionAt([string[]]$lines, [int]$i) {
+        $h = $headingRe.Match($lines[$i])
+        $level = $h.Groups[1].Value.Length
+        $inner = $false
+        for ($end = $i + 1; $end -lt $lines.Count; $end++) {
+            if ($fenceRe.IsMatch($lines[$end])) { $inner = -not $inner; continue }
+            if ($inner) { continue }
+            $next = $headingRe.Match($lines[$end])
+            if ($next.Success -and $next.Groups[1].Value.Length -le $level) { break }
+        }
+        @{ Start = $i; End = $end; Title = $h.Groups[2].Value }
     }
     function Get-NumberedTest([string]$section) {
         $re = [regex]('^§?\s*' + [regex]::Escape($section) + '(?:\.|\s|$)')
@@ -892,6 +968,29 @@ namespace ClaudeHook {
             if (-not $title) { $title = $rel.Substring($rel.LastIndexOf('/') + 1) }
         }
         [pscustomobject]@{ Key = $key; Feature = $feature; Path = $rel; Abs = (Join-Path $script:refRoot $rel); Line = $line; Title = "$title"; Lines = @($body) }
+    }
+    # A code's definition: a heading's section; a table row under the table's header; a list item with its
+    # indented lines. Titled by the section it is in.
+    function New-IdRef([string]$key, [string]$rel, $def, [string]$feature) {
+        $lines = Read-DocLines $rel
+        $i = $def.Line
+        if ($def.Kind -eq 'heading') { return New-Ref $key $rel $lines (Get-SectionAt $lines $i) $feature }
+        if ($def.Kind -eq 'row') {
+            $top = $i
+            while ($top -gt 0 -and $lines[$top - 1] -match '^\s*\|') { $top-- }
+            $body = if ($i -gt $top + 1 -and $lines[$top + 1] -match '^\s*\|?[\s:|-]+$') { @($lines[$top], $lines[$top + 1], $lines[$i]) } else { @($lines[$i]) }
+        } else {
+            $indent = ($lines[$i] -replace '^(\s*).*$', '$1').Length
+            $end = $i + 1
+            while ($end -lt $lines.Count -and $lines[$end].Trim() -and ($lines[$end] -replace '^(\s*).*$', '$1').Length -gt $indent) { $end++ }
+            $body = @($lines[$i..($end - 1)])
+        }
+        $title = $rel.Substring($rel.LastIndexOf('/') + 1)
+        for ($k = $i - 1; $k -ge 0; $k--) {
+            $h = $headingRe.Match($lines[$k])
+            if ($h.Success) { $title = $h.Groups[2].Value; break }
+        }
+        [pscustomobject]@{ Key = $key; Feature = $feature; Path = $rel; Abs = (Join-Path $script:refRoot $rel); Line = $i + 1; Title = $title; Lines = $body }
     }
 
     function Resolve-Reference($m) {
@@ -936,6 +1035,28 @@ namespace ClaudeHook {
                     $lines = Read-DocLines $rel
                     $s = if ($lines) { Find-Section $lines $test }
                     if ($s) { return New-Ref $m.Key $rel $lines $s $slug }
+                }
+            }
+            'section' {
+                # No document named: the one being worked on, the feature's most recently edited with that section.
+                $test = Get-NumberedTest $m.Section
+                foreach ($slug in (Get-OwnFeatures)) {
+                    $docs = @(Get-FeatureDocs $slug | Where-Object { $_ -notmatch "^docs/features/$([regex]::Escape($slug))/.+/" } |
+                        Sort-Object { (Get-Item -LiteralPath (Join-Path $script:refRoot $_)).LastWriteTime } -Descending)
+                    foreach ($rel in $docs) {
+                        $lines = Read-DocLines $rel
+                        $s = if ($lines) { Find-Section $lines $test }
+                        if ($s) { return New-Ref "$($rel.Substring($rel.LastIndexOf('/') + 1)) §$($m.Section)" $rel $lines $s $slug }
+                    }
+                }
+            }
+            'id' {
+                $id = "$($m.Prefix)|$($m.Num)|$($m.Suffix)"
+                foreach ($slug in (Get-OwnFeatures)) {
+                    foreach ($rel in (Get-FeatureDocs $slug)) {
+                        $index = Get-IdIndex $rel
+                        if ($index.ContainsKey($id)) { return New-IdRef $m.Key $rel $index[$id] $slug }
+                    }
                 }
             }
         }
@@ -1293,6 +1414,7 @@ $content
     function Use-Tab($tab) {
         $script:refRoot = $tab.RefRoot
         $script:refCache = $tab.RefCache
+        $script:docCache = $tab.DocCache
     }
 
     # Language flags, Ukrainian and British, drawn here. A click switches the tab's texts and, with Submit or
@@ -1464,7 +1586,7 @@ $content
             Lang = $(if ($sessionLang) { $sessionLang } else { $sourceLang })
             SessionLang = $sessionLang; LangChosen = $false
             SourceLang = $sourceLang; Texts = [Collections.ArrayList]::new(); Translations = @{}; Shown = $sourceLang
-            Visited = $false; RefCache = @{}; Entries = @(); OtherLabels = @(); RefCaptions = @()
+            Visited = $false; RefCache = @{}; DocCache = @{}; Entries = @(); OtherLabels = @(); RefCaptions = @()
             Attachments = [Collections.ArrayList]::new(); ImageCount = 0
         }
         $root = $found.Root
@@ -1529,14 +1651,14 @@ $content
             $text.Margin = New-Object Windows.Forms.Padding(0, 0, 0, (& $px 6))
             $inner.Controls.Add($text)
 
-            # The question and descriptions link their codes in place; codes only in option labels or previews,
-            # which cannot hold links, get a row of their own.
+            # The question and descriptions link their codes in place; codes only in the header, option labels or
+            # previews, which cannot hold links, get a row of their own.
             $refs = @()
             if ($tab.RefRoot) {
                 $inText = @(@($q.question) + @(@($q.options) | ForEach-Object { $_.description }) | Where-Object { $_ } |
                     ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } | Where-Object { $_ })
                 $seen = @{}
-                $refs = @(@(@($q.options) | ForEach-Object { $_.label; $_.preview }) | Where-Object { $_ } |
+                $refs = @(@(@($q.header) + @(@($q.options) | ForEach-Object { $_.label; $_.preview })) | Where-Object { $_ } |
                     ForEach-Object { Get-Mentions $_ } | ForEach-Object { Get-Reference $_ } |
                     Where-Object { $_ -and $inText -notcontains $_ -and -not $seen.ContainsKey($_.Key) } | ForEach-Object { $seen[$_.Key] = $true; $_ })
             }
