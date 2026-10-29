@@ -1148,33 +1148,26 @@ namespace ClaudeHook {
         $body.Dock = 'Fill'
         $body.ScriptErrorsSuppressed = $true
         $body.AllowWebBrowserDrop = $false
-        # Links: a code in the page (Add-PageLinks) or a .md file of the repo opens here (the back link returns);
-        # a page anchor scrolls; anything else opens in its own app.
+        # Links of the page itself (codes, .md and other files, anchors) are handled on click (Open-PageLink): IE
+        # blocks a page set through DocumentText from following a file: link, so they never navigate. A web link
+        # navigates and opens in its own app.
+        $body.add_DocumentCompleted({
+            param($sender)
+            foreach ($a in $sender.Document.GetElementsByTagName('a')) {
+                if ($a.GetAttribute('data-ref') -or $a.GetAttribute('data-anchor') -or $a.GetAttribute('data-file')) {
+                    $a.add_Click({ param($link, $e) Open-PageLink $link $e })
+                }
+            }
+        })
         $body.add_Navigating({
             param($sender, $e)
             $url = $e.Url
             if ($url.Scheme -eq 'about' -and -not $url.Fragment) { return }
             $e.Cancel = $true
-            # A file: URL may come with its # escaped into the path (%23), leaving Fragment empty.
-            $file, $anchor = if ($url.IsFile) { ($url.LocalPath + $url.Fragment) -split '#', 2 } else { '', '' }
-            if ($url.Fragment -match '^#yi-ref-(\d+)$' -or $anchor -match '^yi-ref-(\d+)$') {
-                Open-PageReference $sender $script:pageRefs[[int]$Matches[1]]; return
-            }
             if ($url.Fragment -and ($url.Scheme -eq 'about' -or $url.AbsolutePath.EndsWith('/'))) {
                 $target = $sender.Document.GetElementById($url.Fragment.TrimStart('#'))
                 if ($target) { $target.ScrollIntoView($true) }
                 return
-            }
-            if ($url.IsFile -and $file -match '\.md$' -and $script:current) {
-                Use-Tab $script:current
-                $root = if ($script:refRoot) { [IO.Path]::GetFullPath($script:refRoot).TrimEnd('\') + '\' }
-                $local = [IO.Path]::GetFullPath($file)
-                if ($root -and $local.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
-                    $rel = $local.Substring($root.Length) -replace '\\', '/'
-                    $leaf = $rel.Substring($rel.LastIndexOf('/') + 1)
-                    $r = Get-Reference @{ Kind = 'file'; Path = $rel; Section = ''; Anchor = $anchor; Key = $(if ($anchor) { "$leaf#$anchor" } else { $leaf }) }
-                    if ($r) { Open-PageReference $sender $r; return }
-                }
             }
             $where = if ($url.IsFile) { $url.LocalPath } else { $url.AbsoluteUri }
             try { Start-Process -FilePath $where } catch { Show-Status "$_" $true }
@@ -1318,7 +1311,8 @@ namespace ClaudeHook {
     }
 
     # Codes in the shown section link like those in the questions, looked up from its feature first; a bare §
-    # there is a section of the same document. Code blocks and the page's own links are left alone.
+    # there is a section of the same document when it has one. Code blocks are left alone; the page's own links
+    # get the attribute Open-PageLink follows on click.
     $script:pageRefs = New-Object Collections.ArrayList
     $script:refHistory = New-Object Collections.ArrayList
     function Add-PageLinks([string]$html, $ref) {
@@ -1333,6 +1327,7 @@ namespace ClaudeHook {
         foreach ($t in [regex]::Matches($html, '<[^>]*>|[^<]+')) {
             $s = $t.Value
             if ($s.StartsWith('<')) {
+                if ($s -match '^<a href="([^"]*)">$') { $s = $s.TrimEnd('>') + (Get-LinkData ([Net.WebUtility]::HtmlDecode($Matches[1])) $ref) + '>' }
                 if ($s -match '^<(a|pre)[\s>]') { $skip++ } elseif ($s -match '^</(a|pre)>') { $skip-- }
                 [void]$out.Append($s); continue
             }
@@ -1340,13 +1335,16 @@ namespace ClaudeHook {
             $plain = [Net.WebUtility]::HtmlDecode($s)
             $pos = 0
             foreach ($m in (Get-Mentions $plain)) {
-                if ($m.Kind -eq 'section') { $m.Kind = 'file'; $m.Path = $ref.Path; $m.Anchor = ''; $m.Key = "$leaf §$($m.Section)" }
+                # A bare § the document has is its own; one it lacks (an ADR has no numbered sections) is the feature's.
+                if ($m.Kind -eq 'section' -and (Find-Section (Read-DocLines $ref.Path) (Get-NumberedTest $m.Section))) {
+                    $m.Kind = 'file'; $m.Path = $ref.Path; $m.Anchor = ''; $m.Key = "$leaf §$($m.Section)"
+                }
                 $r = Get-Reference $m
                 if (-not $r -or $r -eq $ref) { continue }
                 [void]$script:pageRefs.Add($r)
                 $tip = & $encode "$($r.Key)$(if ($r.Feature) { " · $($r.Feature)" }) — $($r.Title)"
                 [void]$out.Append((& $encode $plain.Substring($pos, $m.Start - $pos)))
-                [void]$out.Append("<a class=""ref"" href=""#yi-ref-$($script:pageRefs.Count - 1)"" title=""$tip"">" +
+                [void]$out.Append("<a class=""ref"" href=""#yi-ref-$($script:pageRefs.Count - 1)"" data-ref=""$($script:pageRefs.Count - 1)"" title=""$tip"">" +
                     (& $encode $plain.Substring($m.Start, $m.End - $m.Start)) + '</a>')
                 $pos = $m.End
             }
@@ -1355,7 +1353,33 @@ namespace ClaudeHook {
         $script:featureOrder = $order
         $out.ToString()
     }
-    # Shown once the click's navigation is cancelled: the page can't be replaced from inside its own event.
+    # A link of the document itself, as the attribute Open-PageLink reads: a page anchor, a .md file of the repo
+    # (opens here) or any other file (opens in its own app). A web link gets none and navigates.
+    function Get-LinkData([string]$href, $ref) {
+        if ($href -match '^#(.+)') { return " data-anchor=""$(& $encode $Matches[1])""" }
+        if ($href -match '^[a-zA-Z][\w+.-]*:') { return '' }
+        $path, $anchor = $href -split '#', 2
+        try { $abs = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $ref.Abs) ([Uri]::UnescapeDataString($path)))) } catch { return '' }
+        $root = [IO.Path]::GetFullPath($script:refRoot).TrimEnd('\') + '\'
+        if ($abs -match '\.md$' -and $abs.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $abs.Substring($root.Length) -replace '\\', '/'
+            $leaf = $rel.Substring($rel.LastIndexOf('/') + 1)
+            $r = Get-Reference @{ Kind = 'file'; Path = $rel; Section = ''; Anchor = "$anchor"; Key = $(if ($anchor) { "$leaf#$anchor" } else { $leaf }) }
+            if ($r) { [void]$script:pageRefs.Add($r); return " data-ref=""$($script:pageRefs.Count - 1)""" }
+        }
+        " data-file=""$(& $encode $abs)"""
+    }
+    function Open-PageLink($link, $e) {
+        $e.ReturnValue = $false
+        $browser = $script:viewer.Body
+        if ($n = $link.GetAttribute('data-ref')) { Open-PageReference $browser $script:pageRefs[[int]$n] }
+        elseif ($id = $link.GetAttribute('data-anchor')) {
+            $target = $browser.Document.GetElementById($id)
+            if ($target) { $target.ScrollIntoView($true) }
+        }
+        else { try { Start-Process -FilePath $link.GetAttribute('data-file') } catch { Show-Status "$_" $true } }
+    }
+    # Shown after the click returns: the page can't be replaced from inside its own event.
     function Open-PageReference($browser, $ref) {
         if (-not $ref -or $ref -eq $script:shownRef) { return }
         if ($script:shownRef) { [void]$script:refHistory.Add($script:shownRef) }
