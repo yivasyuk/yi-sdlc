@@ -29,6 +29,22 @@ If a question reads like a config dump or a spec excerpt, it's wrong. Write it a
   - `label` — 1–5 words, **action form** = the next mechanical step: «Прийняти», «Виправити», «Винести у відкрите питання», «Викинути», «Зафіксувати як ADR». Add «(Recommended)» to the first option when you recommend it.
   - `description` — 3–5 sentences with four mandatory elements (below).
 
+## References — name what a reader can open
+
+The question window turns references into links that open the referenced text beside it, so write them
+in a form it can resolve:
+
+- **A section with its document**: `sad.md §8`, `PRD §6.1`, `data-model §3`. A bare `§8` resolves to the
+  document named last before it in the same text, else to the one being worked on; name the document
+  whenever the question touches more than one.
+- **Only codes the documents already define**: `AC-03`, `US-02`, `ADR-0019`, an NFR row `N1`, a quality goal
+  `QG-1`, a roadmap decision `D3`. A code links only where a document defines it (a heading, a table's first
+  cell or a list item).
+- **Never invent a label for something not written yet.** A decision drafted for `sad.md §8` has no code
+  until the section is written; `D8.1` or `Decision 3` leads nowhere and reads like an ID that exists.
+  Point at its section and say which one in words: «sad.md §8, перше рішення — SameSite…».
+- The header can't hold links; repeat the reference in the question text.
+
 ## The four mandatory elements of a `description`
 
 1. **What technically happens** — concrete names: tables / endpoints / files / ADR numbers. Not «modify the API» but «add field `is_active BOOLEAN` to table `members` and a new route in the module's handler».
