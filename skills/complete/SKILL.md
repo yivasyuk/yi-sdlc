@@ -54,6 +54,13 @@ ask about individual files. Two limits stay:
 - Size: leave out single files over ~10 MB (build output, dumps, binaries that `.gitignore` misses) and
   name them in the report.
 
+Tracked files that show as modified but differ only in line endings are noise, not changes: undo them
+instead of committing or reporting them as left out. For each modified tracked file, `git diff HEAD
+--ignore-cr-at-eol --quiet -- <path>` exiting 0 means its content matches `HEAD`; `git restore --staged
+--worktree -- <path>` puts it back. This holds whether or not the repo profile names the file (a regenerated
+`openapi.json` is the usual case), and also with `--session`. Name the restored files in one line of the
+report.
+
 With `--session`, only what this session changed is in scope. Leave files that were already modified or
 untracked before the session started, and anything unrelated, out; say which ones were left out in the
 final report. When it is unclear whether a file belongs, ask.
@@ -151,5 +158,5 @@ elsewhere, skip the switch and just `git fetch`. Changes of a group whose PR sta
 not in the working tree; say so.
 
 Report one line per group: the merge commit hash and subject or why it didn't merge, the PR link, and the
-checks result (passed, failed, or none configured). Then any files left out, and any part of the prompt that
-wasn't followed and why.
+checks result (passed, failed, or none configured). Then any files restored because only their line endings
+differed (step 1), any files left out, and any part of the prompt that wasn't followed and why.
