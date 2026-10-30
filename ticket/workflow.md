@@ -32,6 +32,7 @@ This folder has no `SKILL.md`, so it never triggers by itself.
 - [Branches](#branches)
 - [The isolated environment](#the-isolated-environment)
 - [Get the issue ID](#get-the-issue-id)
+- [Size and lane](#size-and-lane)
 - [Test levels](#test-levels)
 - [Docs sync](#docs-sync)
 - [Gates](#gates)
@@ -104,7 +105,8 @@ instead, where the operator reads it afterwards.
   into the technical comment, the PR body and your final message, so every guess is visible and cheap to
   overturn later.
 - The planned stops become ticket comments. Your skill says which.
-- **Merge only a PR that earned it:** every check green, the review round done, the live re-check passed.
+- **Merge only a PR that earned it:** every check green, the review round done, the live re-check passed (in the light lane,
+  the re-check § Size and lane allows).
   Merge the normal way (workflow § After approval). Never use `--admin`, never bypass branch protection or a
   required review, and never merge with a red or pending check. If `gh pr merge` refuses, leave the ticket
   where it is and tell the operator why: that is the end of the run, not something to work around.
@@ -282,6 +284,75 @@ The issue ID is mandatory. Which ticket to work on is the operator's choice, nev
   your turn. Don't search the tracker, list the board or pick an issue yourself, even when only one is open.
   Don't touch the tracker, git or the environment until they answer.
 
+## Size and lane
+
+A one-line ticket shouldn't pay for the apparatus a two-day change needs. Once you have read the docs and the
+code (implement-fix step 1, implement-change step 2), size the ticket and pick its **lane**: the **light
+lane** drops the steps whose cost is out of proportion to a small ticket; the **full lane** is the skill as
+written. Everything that guards correctness stays in both. `/yi-sdlc:implement-feature` sizes its feature
+in `yi-sdlc:write-prd` and always runs the full lane.
+
+### Size
+
+Size it on the `../skills/_shared/size-matrix.md` scale, as far as one PR goes:
+
+| Size | Here it means |
+|---|---|
+| **XS** | One module or layer plus its tests, about 50 lines of production code or fewer, no migration, no contract change |
+| **S** | A few modules or layers, or an additive migration, or a new or changed endpoint; up to about a day |
+| **M** | Up to about two days, several layers and docs; the most one PR takes. Anything bigger graduates (implement-change step 2) |
+
+### The light lane
+
+A ticket takes the light lane when **all** of these hold:
+
+- It is **XS**.
+- A change has at most two new or changed ACs, and none of its items needs a question. A fix has its
+  expected behaviour in an AC or a doc, and its root cause is plain from the code.
+- No migration, no change to an endpoint's or event's contract, and no operation an agent may call is added
+  or changed.
+- Nothing in § Critical stops in auto or profile § Critical stops is near it, and its behaviour doesn't
+  depend on timing or concurrency.
+- Profile § Light lane doesn't turn the lane off or exclude the area.
+
+What it drops:
+
+| Step | Full lane | Light lane |
+|---|---|---|
+| Ambiguity hunt (implement-change step 5) | `yi-sdlc:devils-advocate` | Your own pass over the new and changed ACs: could two competent engineers build different things from each? Tighten what the docs answer; anything else is a question for the stop |
+| The running app (`ticket-env.ps1 up`) | Always | Only when the live check below needs it. The Pane and its worktree stay in every lane |
+| Live check before (fix step 3, change step 4) | The steps on the running app | The failing test is the "before" when it shows exactly the symptom or gap the ticket names. Otherwise look at the app as the full lane does |
+| Live check after (fix step 9, change step 11) | The same steps again | Only when the result is something the operator sees that the tests can't show (a label, a layout); otherwise the green test is the "after" |
+| Review | `yi-sdlc:reviewer` | Your own review of `origin/<base>...HEAD` in the reviewer's two stages (the ACs, then quality, conventions, edge cases and the docs), written down as findings and acted on as § Review says |
+
+Unchanged in both lanes: the `sdlc-mode` and the skill's planned stops, test-first and profile § Test
+levels, docs sync with the leftover sweep, the gates, the changelog entry, the PR and its checks, the ticket
+comments.
+
+**Leaving the light lane.** When a condition stops holding mid-run (the diff grows past XS, a migration or a
+second module turns up, a question the docs can't answer), you are in the full lane from there: run the
+dropped steps still ahead of you, and the ambiguity hunt too while the ACs aren't approved. Say so in the
+next stop or in the technical comment. The operator's word wins either way: "full lane" (or "light lane")
+in the session or on the ticket overrides your call.
+
+### Show the estimate
+
+Right after sizing, before you go on, print a short **Estimate** for the operator, in every mode (in
+`developer` it is part of the brief; in `auto` it goes into the technical comment as well):
+
+```markdown
+**Estimate:** <XS|S|M> · <light|full> lane — <the deciding signal in a few words>
+- Touches: <layers / modules / screens, endpoints, migrations, or "nothing else">
+- Risk: <what could go wrong or is near a critical area, or "low: <why>">
+- Tests: <the levels you plan, per profile § Test levels>
+- Effort: <rough: under an hour, a few hours, about a day, about two days>
+- Open: <questions you'll carry to the stop, or "none">
+<only if a lane condition is borderline: "Light lane dropped because <condition>" or "Full lane steps skipped: <which>">
+```
+
+Keep it to these lines. It doesn't stop the run: the operator reads it and may answer "full lane" or "light
+lane" at the next stop, or interrupt.
+
 ## Test levels
 
 Write the test **before** the production code, run it, and confirm it fails for the reason you expect. Keep
@@ -352,6 +423,9 @@ Below, `<prefix>` is the subject prefix it gives for `<branch>`, colon included.
 
 ## Review
 
+In the light lane, review the diff yourself instead (§ Size and lane), with the same inputs and checks
+below, and act on what you find the same way.
+
 Dispatch the **`yi-sdlc:reviewer`** agent (Agent tool, `subagent_type: "yi-sdlc:reviewer"`). Give it the issue
 ID, the acceptance criteria your skill names, the worktree path, and the diff range `origin/<base>...HEAD`.
 Its stage 1 checks whether the change does what the criteria say; stage 2 checks quality, conventions and edge
@@ -397,7 +471,9 @@ In `auto`, don't ask: once the merge conditions in § SDLC mode hold, go straigh
 Show the operator, compactly:
 
 - the PR URL and its checks (all green)
-- the live before/after your skill describes
+- the size and lane (§ Size and lane), and whether the lane changed mid-run
+- the live before/after your skill describes (in the light lane, the test that failed and now passes may be
+  all of it)
 - the tests that failed before and pass now (names, and the assertion that failed)
 - review: findings applied, findings deferred
 - manual testing: needed or not, and why
@@ -450,6 +526,8 @@ technical one for someone who will read the code. The first lines differ by skil
 **Acceptance criteria:** <feature> PRD <AC IDs added>, changed <AC IDs, old → new in a few words>   ← change
 **Before:** <steps → today's behaviour>. **After:** <same steps → new behaviour>.
 
+**Estimate:** <size> · <lane> lane — <why>; <full-lane steps it ran or skipped, if it switched>
+
 **Changed:**
 - Layers / modules: <the parts of the code base the change touches>
 - Endpoints: <METHOD /api/…, or none>
@@ -459,7 +537,7 @@ technical one for someone who will read the code. The first lines differ by skil
 
 **Tests:** <added or changed tests, with level>
 
-**Review:** <n> findings applied. Deferred: <items, or none>
+**Review:** <n> findings applied (<yi-sdlc:reviewer, or self-review in the light lane>). Deferred: <items, or none>
 
 **Decisions taken in auto:** <question → choice, why; one line each>          ← auto only
 

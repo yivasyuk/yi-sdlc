@@ -157,6 +157,12 @@ Needed only for: <what automated tests here can't cover>.
 Repo-specific additions to `workflow.md` § Critical stops in auto: <e.g. placing orders, touching real
 accounts, granting an agent a new operation>.
 
+## Light lane
+
+Optional; without it `workflow.md` § Size and lane applies as written. `off` turns the light lane off for
+this repo. Otherwise, areas that never take it beyond § Critical stops: <e.g. the engine's money math, the
+runtime's timing>.
+
 ## Change scope
 
 - A change graduates to `/yi-sdlc:implement-feature` when it needs <a new module / capability folder, …>.
