@@ -37,7 +37,8 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 0. Get the issue ID.
 1. Read the ticket: check its column, check it's a change, read its `sdlc-mode`, find the feature it
    belongs to, and split it into items.
-2. Check it fits one PR. If it doesn't, it moves to the full pipeline.
+2. Check it fits one PR. If it doesn't, it moves to the full pipeline. Otherwise size it (XS/S/M), pick
+   the lane, and print the estimate: size, lane, what it touches, risk, test levels, effort, open questions.
 3. Bring up the isolated environment: the ticket's own Pane (its worktree and branch), and the repo's environment around it. Started outside that Pane, the skill opens it and hands the run to a Claude agent there.
 4. Record how each item behaves today.
 5. Write the acceptance criteria into the PRD, then run the ambiguity check (`yi-sdlc:devils-advocate`).
@@ -52,6 +53,15 @@ The PR is then opened, the ticket is updated, and the merge waits for the operat
 14. Open the PR and update the ticket.
 15. **Stop: the operator approves the merge.**
 16. Merge, move the ticket, take down the environment and archive the Pane.
+
+### Light lane
+
+An XS ticket (one module, about 50 lines, no migration or contract change, nothing near a critical area)
+takes the light lane, in `implement-fix` too: no `yi-sdlc:devils-advocate` and no `yi-sdlc:reviewer` (it
+makes those passes itself), and the failing then passing tests are the before/after unless the result is
+something only the running app shows. Tests, docs sync, gates, CI and the stops stay. It switches to the
+full lane as soon as the ticket turns out bigger, or when the operator says so. Details:
+`ticket/workflow.md` § Size and lane.
 
 ## SDLC mode
 

@@ -5,7 +5,8 @@ description: >-
   isolated environment (its own Pane and worktree, which it opens and hands the run to when started
   outside it): reproduce it on a running copy of the app, pin it with a failing test, fix, review with
   yi-sdlc:reviewer, re-check it live, open a PR, report back on the ticket, and merge after the operator
-  approves. The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
+  approves. It sizes the fix first and prints the estimate; a small fix takes a light lane (the failing
+  test as the reproduction, a self-review instead of the reviewer agent). The ticket's sdlc-mode (a field or tags, per the profile) sets the autonomy: auto (merges
   without asking, stops only on critical issues), semi-auto (asks before merging) or developer, the
   default (briefs the operator and works with them interactively). For a defect only: behaviour the docs
   already promise. New or changed behaviour goes to /yi-sdlc:implement-change. Needs the repo's
@@ -50,7 +51,8 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
 3. Check that this is a defect (workflow § Which skill owns a ticket). If the ticket asks for new or changed
    behaviour, stop and tell the operator to run `/yi-sdlc:implement-change <id>` instead.
 4. Read the `sdlc-mode` (workflow § SDLC mode). In `developer`, do the reads in sub-step 6, then
-   follow workflow § Developer mode instead of sub-steps 7–8 and the steps after them. In `auto`, a question
+   follow workflow § Developer mode instead of sub-steps 7–9 and the steps after them; the estimate from
+   sub-step 8 belongs in the brief. In `auto`, a question
    that would block from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
 5. `<branch>` is profile § Branches `fix` (e.g. `fix/<id>-fill-gaps-error`; workflow § Branches).
@@ -59,20 +61,26 @@ I fix? Enter its number (e.g. <the fix example from profile § Tracker>)."** Bel
    route; `design-spec.md`). Those say what "correct" means. Then read the code.
 7. The issue is workable when you can state **expected vs actual behaviour** precisely enough to check
    it. If you can't, take the Blocked exit (workflow § Blocked exit) now, before building anything.
-8. `tracker.move <id> in-progress`.
+8. Size the fix, pick its lane, and print the estimate (workflow § Size and lane). Most fixes with a plain
+   root cause take the light lane.
+9. `tracker.move <id> in-progress`.
 
 ## 2. Bring up the environment
 
 Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
 is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
-the printed JSON.
+the printed JSON. In the light lane, bring the app up only when step 3 or step 9 needs it.
 
 When this session isn't in that Pane (you started it from the main clone), this is where it ends: open the
 Pane and hand the ticket off to a Claude agent there (workflow § Hand it off to the Pane), with the branch
-slug in the prompt's notes so the Pane's session takes the same `<branch>`. That session runs this skill
-again from step 0 and does the rest.
+slug and the estimate in the prompt's notes so the Pane's session takes the same `<branch>` and lane. That
+session runs this skill again from step 0 and does the rest.
 
 ## 3. Reproduce on the running app
+
+In the light lane, skip to step 4 when the ticket names the symptom concretely (an error code, a wrong
+value, a message) and the step 4 test shows exactly that symptom. The test and the ticket's steps are then
+the reproduction. Otherwise reproduce it as below.
 
 See the bug in the real application before writing any test. It confirms the ticket describes a real
 symptom, shows its actual shape (an error code, a log line, a wrong number on screen), and gives you steps
@@ -123,10 +131,13 @@ Workflow § Commits.
 
 ## 8. Review
 
-Workflow § Review. The acceptance criteria are the expected behaviour from step 1; the docs check covers
-what step 5 updated.
+Workflow § Review (in the light lane, your own review). The acceptance criteria are the expected behaviour
+from step 1; the docs check covers what step 5 updated.
 
 ## 9. Re-check on the running app
+
+In the light lane, when step 3 was the test, the green test is the re-check, unless the fix shows in
+something the operator sees that the test can't (a label, a layout): then bring the app up and look once.
 
 Now that the code is final, run `ticket-env.ps1 restart -Issue <id>` and repeat **exactly** the steps
 from step 3. The symptom must be gone, and what sits next to it must still work. If the fix includes a
@@ -141,12 +152,13 @@ Workflow § Manual testing.
 ## 11. Open the PR and update the ticket
 
 Workflow § PR and ticket update. The PR body says what changed and why, and how the bug was reproduced
-and re-checked on the running app. The comments use the **Fixed:** and **Root cause:** variants.
+and re-checked on the running app (or by the test, in the light lane). The comments use the **Fixed:** and **Root cause:** variants.
 
 ## 12. Stop: ask to merge (semi-auto)
 
 Workflow § Ask to merge. The live before/after is the step 3 steps → the symptom, and the same steps →
-the result now. In `auto` there is no stop: merge once the conditions in workflow § SDLC mode hold.
+the result now; in the light lane, the test's failing assertion → green when step 3 was the test. In `auto`
+there is no stop: merge once the conditions in workflow § SDLC mode hold.
 
 ## 13. After approval (or, in auto, after the checks)
 

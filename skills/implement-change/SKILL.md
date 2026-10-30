@@ -3,7 +3,9 @@ name: implement-change
 description: >-
   Implement a change ticket (an enhancement, new or changed behaviour, a task; YouTrack, Jira, or any
   tracker the repo's profile maps) end to end by its ID in an isolated environment (its own Pane and
-  worktree, which it opens and hands the run to when started outside it): check it fits one PR, write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
+  worktree, which it opens and hands the run to when started outside it): check it fits one PR, size it
+  and print the estimate (a small change takes a light lane: no devils-advocate or reviewer agent, the
+  tests as the before/after), write it into the owning feature's acceptance criteria and get the operator's approval, build it test-first,
   review with yi-sdlc:reviewer, demonstrate it on a running copy of the app, open a PR, report back on the
   ticket, and merge after the operator approves. The ticket's sdlc-mode (a field or tags, per the profile)
   sets the autonomy: auto (self-approves the ACs and merges, stops only on critical issues), semi-auto
@@ -60,7 +62,7 @@ normalized ID.
    the docs already promise, stop and tell the operator to run `/yi-sdlc:implement-fix <id>` instead.
 4. Read the `sdlc-mode` (workflow § SDLC mode). In `developer`, do the reads in sub-step 6 and the
    split in sub-step 7, then follow workflow § Developer mode instead of sub-step 8 and the steps after
-   them; the items and the step 2 size check belong in the brief. In `auto`, a question that would block or
+   them; the items, the step 2 size check and its estimate belong in the brief. In `auto`, a question that would block or
    wait for the operator from here on is a stop only if it is critical (workflow § Critical stops in auto);
    otherwise take your best guess and record it.
 5. `<branch>` is profile § Branches `change` (e.g. `change/<id>-chart-enhancements`; workflow
@@ -97,22 +99,27 @@ and why. If only some items are too big, offer the split instead: "Implement ite
 as its own feature?" A borderline case is the same kind of question. This exit applies in `auto` too: how
 much of the ticket to build is the operator's scope call, not a guess.
 
-Otherwise `tracker.move <id> in-progress`.
+Otherwise size the change, pick its lane, and print the estimate (workflow § Size and lane), then
+`tracker.move <id> in-progress`.
 
 ## 3. Bring up the environment
 
 Workflow § The isolated environment, § Bring it up: the ticket's Pane on `<branch>` (step 1.5; the Pane
 is named `<id>-<slug>`), then `ticket-env.ps1 up -Issue <id> -Worktree <worktree>`. Keep the Pane's id and
-the printed JSON.
+the printed JSON. In the light lane, bring the app up only when step 4 or step 11 needs it.
 
 When this session isn't in that Pane (you started it from the main clone), this is where it ends: open the
 Pane and hand the ticket off to a Claude agent there (workflow § Hand it off to the Pane), with the branch
-slug in the prompt's notes so the Pane's session takes the same `<branch>`. That session runs this skill
+slug and the estimate in the prompt's notes so the Pane's session takes the same `<branch>` and lane. That session runs this skill
 again from step 0 and does the rest.
 
 ## 4. Record today's behaviour
 
-For each item, look at what the isolated app does **today**, the ways profile § Live check gives. The
+In the light lane, write today's behaviour per item from the code; the tests you write in step 7, failing
+for the missing behaviour, are the "before". Look at the app only for an item the operator sees that a test
+can't show.
+
+Otherwise, for each item, look at what the isolated app does **today**, the ways profile § Live check gives. The
 worktree is still at `origin/<base>`, so this is what the operator is running. Keep the requests and
 responses, screenshots and values on screen.
 
@@ -144,7 +151,8 @@ Every AC has to be checkable by a test or by the live demo in step 11. If you ca
 one, it isn't finished.
 
 Then dispatch **`yi-sdlc:devils-advocate`** (Agent tool, mode A, the ambiguity hunt). Point it at the PRD and
-the ticket text, and limit it to the new and changed ACs. Work through each finding. Tighten the AC when
+the ticket text, and limit it to the new and changed ACs. In the light lane, make that pass yourself instead
+(workflow § Size and lane). Work through each finding. Tighten the AC when
 the repo docs answer it. Otherwise turn it into a numbered question with your best guess for the stop.
 
 Commit the docs: `<prefix> Write the acceptance criteria for <change>` (workflow § Commits).
@@ -170,7 +178,8 @@ In `semi-auto`, show the operator, compactly:
 - each item → its AC IDs with a one-line gist; changed ACs as old → new; items you are *not* building and
   why (already works per step 4, out of scope, split off)
 - today's behaviour per item (step 4)
-- the plan: layers and modules touched, endpoints, migrations, the test levels, roughly how big
+- the plan: the estimate from step 2 (size, lane, risk, effort), layers and modules touched, endpoints,
+  migrations, the test levels
 - anything that reverses a PRD non-goal or an earlier decision override
 - the open questions, numbered, each with your best guess
 
@@ -212,7 +221,8 @@ Workflow § Gates.
 
 ## 10. Review
 
-Workflow § Review. The acceptance criteria are the **approved new and changed ACs** (give their IDs and the
+Workflow § Review (in the light lane, your own review, with the three checks below). The acceptance
+criteria are the **approved new and changed ACs** (give their IDs and the
 PRD path). Also ask the reviewer to check three things:
 
 - The owning feature's other ACs still hold.
@@ -222,8 +232,11 @@ PRD path). Also ask the reviewer to check three things:
 
 ## 11. Demonstrate it on the running app
 
-Now that the code is final, run `ticket-env.ps1 restart -Issue <id>` and repeat **exactly** the steps
-from step 4. Each item must now behave as its ACs say, and the flows next to it must still work. If the
+In the light lane, the green tests are the "after", unless an item shows in something the operator sees
+that a test can't (a label, a layout): then bring the app up and look once.
+
+Otherwise, now that the code is final, run `ticket-env.ps1 restart -Issue <id>` and repeat **exactly** the
+steps from step 4. Each item must now behave as its ACs say, and the flows next to it must still work. If the
 change includes a migration, it was applied to the isolated copy on restart and should show nothing odd.
 
 An AC you can't show working sends you back to step 7 with what you learned.
@@ -248,7 +261,8 @@ comments use the **Changed:** and **Acceptance criteria:** variants.
 ## 15. Stop: ask to merge (semi-auto)
 
 Workflow § Ask to merge. The live before/after is per item: the step 4 steps → today's behaviour, and the
-same steps → the new behaviour. In `auto` there is no stop: merge once the conditions in workflow § SDLC
+same steps → the new behaviour; in the light lane, the tests that failed and pass now, plus any look at the
+app. In `auto` there is no stop: merge once the conditions in workflow § SDLC
 mode hold.
 
 ## 16. After approval (or, in auto, after the checks)
